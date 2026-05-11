@@ -1,0 +1,32 @@
+{
+  "name": "cortex-cli",
+  "version": "0.0.1",
+  "description": "Sync Claude Code context between machines with intelligent path remapping",
+  "license": "AGPL-3.0",
+  "type": "module",
+  "bin": {
+    "cortex": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^7.0.0",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
