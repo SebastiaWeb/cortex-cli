@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { convertCommand, type ConvertTarget } from './commands/convert.js';
 import { initCommand } from './commands/init.js';
 import { pullCommand } from './commands/pull.js';
 import { statusCommand } from './commands/status.js';
@@ -34,5 +35,19 @@ program
   .description('Show what is out of sync between local files and storage')
   .option('--target <path>', 'Override storage to a local folder (overrides config)')
   .action(statusCommand);
+
+program
+  .command('convert <skill-file>')
+  .description('Convert a Claude Code skill to Antigravity or Cursor format')
+  .requiredOption('--to <target>', 'Target format: antigravity | cursor | all')
+  .option('--output-dir <path>', 'Project root where output files are written (default: cwd)')
+  .action((skillFile: string, opts: { to: string; outputDir?: string }) => {
+    const validTargets: ConvertTarget[] = ['antigravity', 'cursor', 'all'];
+    if (!validTargets.includes(opts.to as ConvertTarget)) {
+      console.error(`Invalid target "${opts.to}". Use: antigravity, cursor, or all`);
+      process.exit(1);
+    }
+    return convertCommand(skillFile, { to: opts.to as ConvertTarget, outputDir: opts.outputDir });
+  });
 
 await program.parseAsync(process.argv);
