@@ -5,7 +5,7 @@
 Claude Code stores your session history in `~/.claude/projects/` using absolute paths. Switch from your Mac to a Linux server and those sessions are gone — the paths don't match. `cortex` fixes that.
 
 ```bash
-npm install -g cortex-cli
+npm install -g cortex-sync
 ```
 
 ---
@@ -31,7 +31,7 @@ Machine A (Mac)                        Machine B (Linux)
 
 ```bash
 # 1. Install
-npm install -g cortex-cli
+npm install -g cortex-sync
 
 # 2. Configure on Machine A
 cortex init
