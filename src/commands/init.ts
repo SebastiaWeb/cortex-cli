@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { resolveToolPath } from '../adapters/paths.js';
 import type { SupportedTool } from '../adapters/types.js';
+import { ensureGitHubRepo, fetchGitHubUser } from '../storage/github.js';
 
 const CORTEX_DIR = join(homedir(), '.cortex');
 const CONFIG_PATH = join(CORTEX_DIR, 'config.json');
@@ -14,7 +15,10 @@ export interface CortexConfig {
   version: 1;
   storage: StorageBackend;
   email: string;
-  target?: string; // required when storage === 'local'
+  target?: string;       // required when storage === 'local'
+  githubToken?: string;  // PAT with repo scope
+  githubOwner?: string;  // GitHub username (resolved from token during init)
+  githubRepo?: string;   // repo name, default 'cortex-backup'
   tools: SupportedTool[];
   createdAt: string;
 }
@@ -48,19 +52,50 @@ export async function initCommand(): Promise<void> {
   const storage = await select<StorageBackend>({
     message: 'Where do you want to store your synced files?',
     choices: [
-      { name: 'Google Drive (default, 15GB free) — OAuth flow comes in a later release', value: 'gdrive' },
-      { name: 'GitHub (private repo)        — implementation pending', value: 'github' },
-      { name: 'Local folder (works with Dropbox / iCloud Drive / Syncthing)', value: 'local' },
+      { name: 'GitHub private repo (PAT — no OAuth app needed)', value: 'github' },
+      { name: 'Local folder (Dropbox / iCloud Drive / Syncthing)', value: 'local' },
+      { name: 'Google Drive — coming in a later release', value: 'gdrive' },
     ],
   });
 
   let target: string | undefined;
+  let githubToken: string | undefined;
+  let githubOwner: string | undefined;
+  let githubRepo: string | undefined;
+
   if (storage === 'local') {
     target = await input({
       message: 'Path to the synced folder (e.g. ~/Dropbox/cortex-backup):',
       validate: (v) => v.trim().length > 0 || 'Required',
     });
     target = target.replace(/^~(?=\/|$)/, homedir());
+  }
+
+  if (storage === 'github') {
+    console.log('\nYou need a GitHub Personal Access Token with "repo" scope.');
+    console.log('Create one at: https://github.com/settings/tokens/new?scopes=repo\n');
+
+    githubToken = await password({
+      message: 'Paste your GitHub PAT (ghp_...):',
+      mask: '*',
+      validate: (v) => v.trim().startsWith('gh') || 'Token should start with gh',
+    });
+
+    process.stdout.write('Validating token… ');
+    githubOwner = await fetchGitHubUser(githubToken.trim());
+    console.log(`✓ Authenticated as ${githubOwner}`);
+
+    githubRepo = await input({
+      message: 'Repo name for the backup:',
+      default: 'cortex-backup',
+      validate: (v) => /^[a-zA-Z0-9_.-]+$/.test(v.trim()) || 'Invalid repo name',
+    });
+
+    process.stdout.write(`Creating private repo ${githubOwner}/${githubRepo}… `);
+    await ensureGitHubRepo(githubToken.trim(), githubRepo.trim());
+    console.log('✓ Ready');
+    githubToken = githubToken.trim();
+    githubRepo = githubRepo.trim();
   }
 
   // Passphrase used at runtime to derive the AES key. Never written to disk.
@@ -85,14 +120,19 @@ export async function initCommand(): Promise<void> {
     storage,
     email,
     target,
+    githubToken,
+    githubOwner,
+    githubRepo,
     tools: detected,
     createdAt: new Date().toISOString(),
   };
   await writeFile(CONFIG_PATH, JSON.stringify(config, null, 2));
   console.log(`\n✓ Configuration saved to ${CONFIG_PATH}`);
-  if (storage === 'local') {
+  if (storage === 'github') {
+    console.log(`Next step: run "cortex sync" — files will be encrypted and pushed to ${githubOwner}/${githubRepo}.`);
+  } else if (storage === 'local') {
     console.log('Next step: run "cortex sync" to encrypt and upload your files to the local folder.');
   } else {
-    console.log(`Next step: ${storage} backend not yet implemented — use --target <path> with "cortex sync" for now.`);
+    console.log('Next step: Google Drive backend is not yet implemented — use --target <path> with "cortex sync" for now.');
   }
 }
