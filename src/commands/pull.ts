@@ -1,3 +1,5 @@
+import { input } from '@inquirer/prompts';
+import { existsSync } from 'node:fs';
 import { ClaudeCodeAdapter } from '../adapters/claude-code.js';
 import { resolveBackend } from '../lib/backend-resolver.js';
 import { MANIFEST_PATH, loadConfig } from '../lib/config.js';
@@ -10,9 +12,43 @@ import {
   saveManifest,
 } from '../lib/manifest.js';
 import { readPassphrase } from '../lib/passphrase.js';
+import { encodeProjectPath } from '../lib/path-encoder.js';
+import { loadMappings, saveMappings } from '../lib/path-mappings.js';
+import { extractCwdFromJsonl, remapJsonlBuffer } from '../lib/jsonl-remapper.js';
 
 export interface PullOptions {
   target?: string;
+}
+
+/**
+ * Determine the local path for a project given its remote metadata.
+ * Priority:
+ *  1. path-mappings.json keyed by projectId (if available)
+ *  2. path-mappings.json keyed by originalPath
+ *  3. originalPath exists on this machine → same machine / identical layout
+ *  4. Prompt user
+ */
+async function resolveLocalPath(
+  projectId: string | null,
+  originalPath: string,
+  mappings: Record<string, string>,
+): Promise<string | null> {
+  const key = projectId ?? originalPath;
+
+  if (mappings[key]) return mappings[key];
+  if (projectId && mappings[originalPath]) return mappings[originalPath];
+
+  if (existsSync(originalPath)) return originalPath;
+
+  // Interactive prompt
+  console.log(`\nProject not found on this machine:`);
+  console.log(`  Original path: ${originalPath}`);
+  if (projectId) console.log(`  Project ID:    ${projectId}`);
+  const answer = await input({
+    message: 'Local path (leave empty to skip this project):',
+  });
+  if (!answer.trim()) return null;
+  return answer.trim();
 }
 
 export async function pullCommand(opts: PullOptions = {}): Promise<void> {
@@ -33,14 +69,34 @@ export async function pullCommand(opts: PullOptions = {}): Promise<void> {
 
   const local: Manifest = (await loadManifest(MANIFEST_PATH)) ?? emptyManifest('claude-code');
 
-  // We want files to pull: those present in remote but missing/different locally.
-  // Treat from local→remote perspective: "added" = in local but not remote, etc.
-  // Here we invert: pull anything where local differs from remote.
   const diff = diffManifests(remote, local);
   const toPull = [...diff.added, ...diff.modified];
   console.log(
     `Diff — to download: ${toPull.length} (new: ${diff.added.length}, changed: ${diff.modified.length}), to remove locally: ${diff.removed.length}`,
   );
+
+  // Build per-encodedDir path remapping table from the remote manifest metadata.
+  const mappings = await loadMappings();
+  const dirRemap = new Map<string, string | null>(); // oldEncodedDir → newEncodedDir (null = skip)
+
+  if (remote.projects) {
+    let mappingsDirty = false;
+    for (const [encodedDir, meta] of Object.entries(remote.projects)) {
+      const localPath = await resolveLocalPath(meta.projectId, meta.originalPath, mappings);
+      if (localPath === null) {
+        dirRemap.set(encodedDir, null);
+        continue;
+      }
+      const key = meta.projectId ?? meta.originalPath;
+      if (mappings[key] !== localPath) {
+        mappings[key] = localPath;
+        mappingsDirty = true;
+      }
+      const newEncoded = encodeProjectPath(localPath);
+      dirRemap.set(encodedDir, newEncoded);
+    }
+    if (mappingsDirty) await saveMappings(mappings);
+  }
 
   async function* gen() {
     for (const path of toPull) {
@@ -51,7 +107,36 @@ export async function pullCommand(opts: PullOptions = {}): Promise<void> {
       if (expected !== actual) {
         throw new Error(`Checksum mismatch on ${path}: expected ${expected}, got ${actual}`);
       }
-      yield { relativePath: path, content };
+
+      // Check if this file belongs to a project directory that needs remapping.
+      const m = path.match(/^(projects\/([^/]+))\/(.*\.jsonl)$/);
+      if (m && dirRemap.has(m[2])) {
+        const oldEncodedDir = m[2];
+        const newEncodedDir = dirRemap.get(oldEncodedDir);
+
+        if (newEncodedDir === null) continue; // user skipped this project
+
+        // Determine old path from JSONL content for content remapping.
+        const originalPath = remote.projects?.[oldEncodedDir]?.originalPath;
+        let remappedContent = content;
+        let relativePath = path;
+
+        if (originalPath) {
+          // Replace cwd and structural path fields in JSONL.
+          const localPath = mappings[remote.projects![oldEncodedDir].projectId ?? originalPath]
+            ?? originalPath;
+          remappedContent = remapJsonlBuffer(content, originalPath, localPath);
+        }
+
+        // Rename the directory portion of the path.
+        if (newEncodedDir !== oldEncodedDir) {
+          relativePath = `projects/${newEncodedDir}/${m[3]}`;
+        }
+
+        yield { relativePath, content: remappedContent };
+      } else {
+        yield { relativePath: path, content };
+      }
     }
   }
 

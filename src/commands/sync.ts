@@ -5,6 +5,8 @@ import { checksumSha256, decrypt, deriveKey, encrypt } from '../lib/crypto.js';
 import { diffManifests, emptyManifest, type Manifest, saveManifest } from '../lib/manifest.js';
 import { readPassphrase } from '../lib/passphrase.js';
 import { detectSecrets } from '../lib/secrets-detector.js';
+import { extractCwdFromJsonl } from '../lib/jsonl-remapper.js';
+import { identifyProject } from '../lib/project-identifier.js';
 
 export interface SyncOptions {
   target?: string;
@@ -33,6 +35,20 @@ export async function syncCommand(opts: SyncOptions = {}): Promise<void> {
     };
   }
   console.log(`  ${contents.size} files`);
+
+  // Build project metadata for path remapping on the destination machine.
+  local.projects = {};
+  const seenDirs = new Set<string>();
+  for (const [path, content] of contents) {
+    const m = path.match(/^projects\/([^/]+)\/[^/]+\.jsonl$/);
+    if (!m || seenDirs.has(m[1])) continue;
+    const encodedDir = m[1];
+    seenDirs.add(encodedDir);
+    const cwd = extractCwdFromJsonl(content);
+    if (!cwd) continue;
+    const info = identifyProject(cwd);
+    local.projects[encodedDir] = { projectId: info?.projectId ?? null, originalPath: cwd };
+  }
 
   if (!opts.skipSecretsCheck) {
     const findings: Array<{ file: string; pattern: string; preview: string }> = [];
