@@ -1,14 +1,28 @@
 {
   "name": "cortex-cli",
-  "version": "0.0.1",
-  "description": "Sync Claude Code context between machines with intelligent path remapping",
+  "version": "0.1.0",
+  "description": "Sync Claude Code sessions between machines with automatic path remapping and skill conversion",
   "license": "AGPL-3.0",
   "type": "module",
   "bin": {
     "cortex": "dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "claude-code",
+    "claude",
+    "anthropic",
+    "sync",
+    "backup",
+    "path-remapping",
+    "ai-tools",
+    "developer-tools",
+    "cli"
   ],
   "engines": {
     "node": ">=20"
