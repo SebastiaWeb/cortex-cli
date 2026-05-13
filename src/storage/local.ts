@@ -1,21 +1,34 @@
 import { access, mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
-import { dirname, join, relative, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import type { IStorageBackend, RemoteFile } from './types.js';
 
 export class LocalFilesystemBackend implements IStorageBackend {
   readonly name = 'local';
+  private readonly resolvedRoot: string;
 
-  constructor(private readonly root: string) {}
+  constructor(private readonly root: string) {
+    this.resolvedRoot = resolve(root);
+  }
+
+  /** Resolve and validate that `path` stays within root — throws on traversal. */
+  private safePath(path: string): string {
+    const resolved = resolve(join(this.resolvedRoot, path));
+    if (resolved !== this.resolvedRoot && !resolved.startsWith(this.resolvedRoot + sep)) {
+      throw new Error(`Path traversal attempt blocked: ${path}`);
+    }
+    return resolved;
+  }
 
   async list(): Promise<RemoteFile[]> {
     const out: RemoteFile[] = [];
-    await this.walk(this.root, out);
+    await this.walk(this.resolvedRoot, out);
     return out;
   }
 
   async has(path: string): Promise<boolean> {
+    const safe = this.safePath(path); // throws on traversal — must not be caught below
     try {
-      await access(join(this.root, path));
+      await access(safe);
       return true;
     } catch {
       return false;
@@ -23,18 +36,18 @@ export class LocalFilesystemBackend implements IStorageBackend {
   }
 
   async read(path: string): Promise<Buffer> {
-    return readFile(join(this.root, path));
+    return readFile(this.safePath(path));
   }
 
   async write(path: string, content: Buffer): Promise<void> {
-    const dest = join(this.root, path);
+    const dest = this.safePath(path);
     await mkdir(dirname(dest), { recursive: true });
     await writeFile(dest, content);
   }
 
   async remove(path: string): Promise<void> {
     try {
-      await unlink(join(this.root, path));
+      await unlink(this.safePath(path));
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
     }
@@ -54,7 +67,7 @@ export class LocalFilesystemBackend implements IStorageBackend {
         await this.walk(full, out);
       } else if (e.isFile()) {
         const s = await stat(full);
-        const path = relative(this.root, full).split(sep).join('/');
+        const path = relative(this.resolvedRoot, full).split(sep).join('/');
         out.push({ path, size: s.size, mtime: s.mtimeMs });
       }
     }

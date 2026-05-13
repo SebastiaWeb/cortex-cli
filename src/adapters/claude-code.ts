@@ -1,5 +1,5 @@
 import { readdir, readFile, writeFile, mkdir, stat } from 'node:fs/promises';
-import { dirname, join, relative, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { resolveToolPath } from './paths.js';
 import type { FileEntry, IToolAdapter, SupportedTool } from './types.js';
 
@@ -16,8 +16,13 @@ export class ClaudeCodeAdapter implements IToolAdapter {
   }
 
   async putFiles(files: AsyncIterable<FileEntry>): Promise<void> {
+    const resolvedRoot = resolve(this.root);
     for await (const f of files) {
-      const dest = join(this.root, f.relativePath);
+      const dest = resolve(join(resolvedRoot, f.relativePath));
+      // Block path traversal from a compromised remote manifest
+      if (dest !== resolvedRoot && !dest.startsWith(resolvedRoot + sep)) {
+        throw new Error(`Path traversal attempt blocked: ${f.relativePath}`);
+      }
       await mkdir(dirname(dest), { recursive: true });
       await writeFile(dest, f.content);
     }

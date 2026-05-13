@@ -9,8 +9,12 @@ export interface ProjectInfo {
 
 function runGit(cwd: string, args: string): string | null {
   try {
-    return execSync(`git ${args}`, { cwd, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf-8' })
-      .trim();
+    return execSync(`git ${args}`, {
+      cwd,
+      stdio: ['ignore', 'pipe', 'ignore'],
+      encoding: 'utf-8',
+      timeout: 5000, // 5 s max — avoids hanging on unreachable remotes
+    }).trim();
   } catch {
     return null;
   }

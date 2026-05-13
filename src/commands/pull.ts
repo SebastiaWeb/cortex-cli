@@ -1,5 +1,6 @@
 import { input } from '@inquirer/prompts';
 import { existsSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import { ClaudeCodeAdapter } from '../adapters/claude-code.js';
 import { resolveBackend } from '../lib/backend-resolver.js';
 import { MANIFEST_PATH, loadConfig } from '../lib/config.js';
@@ -82,6 +83,12 @@ export async function pullCommand(opts: PullOptions = {}): Promise<void> {
   if (remote.projects) {
     let mappingsDirty = false;
     for (const [encodedDir, meta] of Object.entries(remote.projects)) {
+      // Reject non-absolute originalPath — malformed or tampered manifest entry.
+      if (!isAbsolute(meta.originalPath)) {
+        console.warn(`Skipping project "${encodedDir}": originalPath is not absolute.`);
+        dirRemap.set(encodedDir, null);
+        continue;
+      }
       const localPath = await resolveLocalPath(meta.projectId, meta.originalPath, mappings);
       if (localPath === null) {
         dirRemap.set(encodedDir, null);

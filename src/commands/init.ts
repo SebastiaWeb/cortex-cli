@@ -1,5 +1,5 @@
 import { confirm, input, password, select } from '@inquirer/prompts';
-import { access, mkdir, writeFile } from 'node:fs/promises';
+import { access, chmod, mkdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { resolveToolPath } from '../adapters/paths.js';
@@ -126,7 +126,8 @@ export async function initCommand(): Promise<void> {
     tools: detected,
     createdAt: new Date().toISOString(),
   };
-  await writeFile(CONFIG_PATH, JSON.stringify(config, null, 2));
+  await writeFile(CONFIG_PATH, JSON.stringify(config, null, 2), { mode: 0o600 });
+  await chmod(CONFIG_PATH, 0o600); // ensure even when file already existed
   console.log(`\n✓ Configuration saved to ${CONFIG_PATH}`);
   if (storage === 'github') {
     console.log(`Next step: run "cortex sync" — files will be encrypted and pushed to ${githubOwner}/${githubRepo}.`);

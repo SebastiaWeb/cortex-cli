@@ -48,4 +48,28 @@ describe('LocalFilesystemBackend', () => {
     const fresh = new LocalFilesystemBackend(join(root, 'never-created'));
     expect(await fresh.list()).toEqual([]);
   });
+
+  describe('path traversal protection', () => {
+    it('read() throws on ../escape', async () => {
+      await expect(backend.read('../etc/passwd')).rejects.toThrow('Path traversal');
+    });
+
+    it('write() throws on ../escape', async () => {
+      await expect(backend.write('../evil.txt', Buffer.from('x'))).rejects.toThrow('Path traversal');
+    });
+
+    it('has() throws on ../escape', async () => {
+      await expect(backend.has('../../outside')).rejects.toThrow('Path traversal');
+    });
+
+    it('remove() throws on ../escape', async () => {
+      await expect(backend.remove('../outside')).rejects.toThrow('Path traversal');
+    });
+
+    it('allows deeply nested paths within root', async () => {
+      await expect(
+        backend.write('a/b/c/d/file.bin', Buffer.from('ok')),
+      ).resolves.toBeUndefined();
+    });
+  });
 });

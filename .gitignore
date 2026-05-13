@@ -2,6 +2,14 @@ node_modules/
 dist/
 *.log
 .env
+.env.*
 .DS_Store
 coverage/
 .vitest-cache/
+
+# cortex runtime files — never commit these
+~/.cortex/
+config.json
+api-key.enc
+manifest.json
+path-mappings.json

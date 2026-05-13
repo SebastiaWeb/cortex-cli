@@ -1,6 +1,6 @@
 import { password, confirm } from '@inquirer/prompts';
 import { existsSync } from 'node:fs';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { chmod, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { CORTEX_DIR, loadConfig } from './config.js';
 import { deriveKey, encrypt, decrypt } from './crypto.js';
@@ -41,7 +41,8 @@ export async function loadApiKey(): Promise<string> {
     const derived = deriveKey(passphrase, config.email);
     const enc = encrypt(Buffer.from(key.trim(), 'utf-8'), derived);
     await mkdir(dirname(API_KEY_PATH), { recursive: true });
-    await writeFile(API_KEY_PATH, enc);
+    await writeFile(API_KEY_PATH, enc, { mode: 0o600 });
+    await chmod(API_KEY_PATH, 0o600);
     console.log(`✓ API key saved to ${API_KEY_PATH}`);
   }
 
