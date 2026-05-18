@@ -137,3 +137,56 @@ export async function initCommand(): Promise<void> {
     console.log('Next step: Google Drive backend is not yet implemented — use --target <path> with "cortex sync" for now.');
   }
 }
+
+export interface NonInteractiveInitOptions {
+  email?: string;
+  storage?: 'github' | 'local';
+  githubRepo?: string;
+  target?: string;
+}
+
+export async function initNonInteractive(opts: NonInteractiveInitOptions): Promise<void> {
+  if (!opts.email) throw new Error('email is required');
+  if (!opts.storage) throw new Error('storage is required: "github" or "local"');
+  if (opts.storage === 'local' && !opts.target) {
+    throw new Error('target path is required when storage is "local"');
+  }
+
+  let githubToken: string | undefined;
+  let githubOwner: string | undefined;
+  let githubRepo: string | undefined;
+
+  if (opts.storage === 'github') {
+    githubToken = process.env.CORTEX_GITHUB_TOKEN;
+    if (!githubToken) {
+      throw new Error(
+        'CORTEX_GITHUB_TOKEN environment variable is not set.\n' +
+          'Create a PAT at: https://github.com/settings/tokens/new?scopes=repo\n' +
+          'Then set: export CORTEX_GITHUB_TOKEN="ghp_..."',
+      );
+    }
+    githubOwner = await fetchGitHubUser(githubToken);
+    console.log(`✓ Authenticated as ${githubOwner}`);
+    githubRepo = opts.githubRepo ?? 'cortex-backup';
+    await ensureGitHubRepo(githubToken, githubRepo);
+    console.log(`✓ Repo ${githubOwner}/${githubRepo} ready`);
+  }
+
+  const detected = await detectInstalledTools();
+
+  await mkdir(CORTEX_DIR, { recursive: true });
+  const config: CortexConfig = {
+    version: 1,
+    storage: opts.storage,
+    email: opts.email,
+    target: opts.target,
+    githubToken,
+    githubOwner,
+    githubRepo,
+    tools: detected,
+    createdAt: new Date().toISOString(),
+  };
+  await writeFile(CONFIG_PATH, JSON.stringify(config, null, 2), { mode: 0o600 });
+  await chmod(CONFIG_PATH, 0o600);
+  console.log(`✓ Configuration saved to ${CONFIG_PATH}`);
+}
