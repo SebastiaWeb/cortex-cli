@@ -10,6 +10,7 @@ export type ConvertTarget = 'antigravity' | 'cursor' | 'all';
 export interface ConvertOptions {
   to: ConvertTarget;
   outputDir?: string;
+  apiKey?: string;
 }
 
 export async function convertCommand(skillPath: string, opts: ConvertOptions): Promise<void> {
@@ -28,7 +29,7 @@ export async function convertCommand(skillPath: string, opts: ConvertOptions): P
 
   console.log(`Converting "${skill.name}" → ${opts.to}\n`);
 
-  const apiKey = await loadApiKey();
+  const apiKey = opts.apiKey ?? (await loadApiKey());
 
   const targets: Array<'antigravity' | 'cursor'> =
     opts.to === 'all' ? ['antigravity', 'cursor'] : [opts.to];
