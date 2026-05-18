@@ -82,7 +82,7 @@ export async function mcpCommand(): Promise<void> {
       inputSchema: z.object({
         target: z.string().optional().describe('Override storage to a local folder path'),
         projectMappings: z
-          .record(z.string())
+          .record(z.string(), z.string())
           .optional()
           .describe('Map of projectId or originalPath to local path on this machine'),
       }),

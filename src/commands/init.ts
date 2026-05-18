@@ -81,7 +81,7 @@ export async function initCommand(): Promise<void> {
       validate: (v) => v.trim().startsWith('gh') || 'Token should start with gh',
     });
 
-    process.stdout.write('Validating token… ');
+    console.log('Validating token…');
     githubOwner = await fetchGitHubUser(githubToken.trim());
     console.log(`✓ Authenticated as ${githubOwner}`);
 
@@ -91,7 +91,7 @@ export async function initCommand(): Promise<void> {
       validate: (v) => /^[a-zA-Z0-9_.-]+$/.test(v.trim()) || 'Invalid repo name',
     });
 
-    process.stdout.write(`Creating private repo ${githubOwner}/${githubRepo}… `);
+    console.log(`Creating private repo ${githubOwner}/${githubRepo}…`);
     await ensureGitHubRepo(githubToken.trim(), githubRepo.trim());
     console.log('✓ Ready');
     githubToken = githubToken.trim();

@@ -35,7 +35,7 @@ export async function convertCommand(skillPath: string, opts: ConvertOptions): P
     opts.to === 'all' ? ['antigravity', 'cursor'] : [opts.to];
 
   for (const target of targets) {
-    process.stdout.write(`  ${target}… `);
+    console.log(`  ${target}…`);
     let outPath: string;
     if (target === 'antigravity') {
       outPath = await convertToAntigravity(skill, apiKey, outputDir);

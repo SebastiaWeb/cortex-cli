@@ -29,7 +29,7 @@ program
   .command('pull')
   .description('Download from storage and restore into ~/.claude/')
   .option('--target <path>', 'Override storage to a local folder (overrides config)')
-  .action(pullCommand);
+  .action((opts) => void pullCommand(opts));
 
 program
   .command('status')
