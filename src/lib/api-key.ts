@@ -8,13 +8,17 @@ import { readPassphrase } from './passphrase.js';
 
 export const API_KEY_PATH = join(CORTEX_DIR, 'api-key.enc');
 
+export interface LoadApiKeyOptions {
+  nonInteractive?: boolean;
+}
+
 /**
  * Load the Anthropic API key using this priority:
  *  1. ANTHROPIC_API_KEY env var
  *  2. ~/.cortex/api-key.enc (AES-256-GCM, same passphrase as sync)
  *  3. Interactive prompt — offers to save encrypted for next time
  */
-export async function loadApiKey(): Promise<string> {
+export async function loadApiKey(opts: LoadApiKeyOptions = {}): Promise<string> {
   if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
 
   if (existsSync(API_KEY_PATH)) {
@@ -23,6 +27,13 @@ export async function loadApiKey(): Promise<string> {
     const derived = deriveKey(passphrase, config.email);
     const enc = await readFile(API_KEY_PATH);
     return decrypt(enc, derived).toString('utf-8').trim();
+  }
+
+  if (opts.nonInteractive) {
+    throw new Error(
+      'ANTHROPIC_API_KEY environment variable is not set and no encrypted key found.\n' +
+        'Set it with: export ANTHROPIC_API_KEY="sk-ant-..."',
+    );
   }
 
   const key = await password({
