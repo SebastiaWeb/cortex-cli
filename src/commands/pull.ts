@@ -19,29 +19,48 @@ import { extractCwdFromJsonl, remapJsonlBuffer } from '../lib/jsonl-remapper.js'
 
 export interface PullOptions {
   target?: string;
+  projectMappings?: Record<string, string>;
+  nonInteractive?: boolean;
+}
+
+export interface PullResult {
+  filesRestored: number;
+  pendingMappings?: Array<{
+    encodedDir: string;
+    projectId: string | null;
+    originalPath: string;
+  }>;
 }
 
 /**
  * Determine the local path for a project given its remote metadata.
  * Priority:
- *  1. path-mappings.json keyed by projectId (if available)
- *  2. path-mappings.json keyed by originalPath
- *  3. originalPath exists on this machine → same machine / identical layout
- *  4. Prompt user
+ *  1. projectMappings keyed by projectId (if available)
+ *  2. projectMappings keyed by originalPath
+ *  3. path-mappings.json keyed by projectId (if available)
+ *  4. path-mappings.json keyed by originalPath
+ *  5. originalPath exists on this machine → same machine / identical layout
+ *  6. Prompt user (skipped in nonInteractive mode → returns null)
  */
-async function resolveLocalPath(
+export async function resolveLocalPath(
   projectId: string | null,
   originalPath: string,
   mappings: Record<string, string>,
+  projectMappings?: Record<string, string>,
+  nonInteractive?: boolean,
 ): Promise<string | null> {
   const key = projectId ?? originalPath;
+
+  if (projectMappings?.[key]) return projectMappings[key];
+  if (projectId && projectMappings?.[originalPath]) return projectMappings[originalPath];
 
   if (mappings[key]) return mappings[key];
   if (projectId && mappings[originalPath]) return mappings[originalPath];
 
   if (existsSync(originalPath)) return originalPath;
 
-  // Interactive prompt
+  if (nonInteractive) return null;
+
   console.log(`\nProject not found on this machine:`);
   console.log(`  Original path: ${originalPath}`);
   if (projectId) console.log(`  Project ID:    ${projectId}`);
@@ -52,7 +71,7 @@ async function resolveLocalPath(
   return answer.trim();
 }
 
-export async function pullCommand(opts: PullOptions = {}): Promise<void> {
+export async function pullCommand(opts: PullOptions = {}): Promise<PullResult> {
   const config = await loadConfig();
   const passphrase = await readPassphrase();
   const derived = deriveKey(passphrase, config.email);
@@ -79,6 +98,11 @@ export async function pullCommand(opts: PullOptions = {}): Promise<void> {
   // Build per-encodedDir path remapping table from the remote manifest metadata.
   const mappings = await loadMappings();
   const dirRemap = new Map<string, string | null>(); // oldEncodedDir → newEncodedDir (null = skip)
+  const pendingMappings: Array<{
+    encodedDir: string;
+    projectId: string | null;
+    originalPath: string;
+  }> = [];
 
   if (remote.projects) {
     let mappingsDirty = false;
@@ -89,8 +113,21 @@ export async function pullCommand(opts: PullOptions = {}): Promise<void> {
         dirRemap.set(encodedDir, null);
         continue;
       }
-      const localPath = await resolveLocalPath(meta.projectId, meta.originalPath, mappings);
+      const localPath = await resolveLocalPath(
+        meta.projectId,
+        meta.originalPath,
+        mappings,
+        opts.projectMappings,
+        opts.nonInteractive,
+      );
       if (localPath === null) {
+        if (opts.nonInteractive) {
+          pendingMappings.push({
+            encodedDir,
+            projectId: meta.projectId,
+            originalPath: meta.originalPath,
+          });
+        }
         dirRemap.set(encodedDir, null);
         continue;
       }
@@ -151,4 +188,8 @@ export async function pullCommand(opts: PullOptions = {}): Promise<void> {
 
   await saveManifest(MANIFEST_PATH, remote);
   console.log(`\n✓ Pull complete — ${toPull.length} files restored.`);
+  return {
+    filesRestored: toPull.length,
+    pendingMappings: pendingMappings.length > 0 ? pendingMappings : undefined,
+  };
 }
