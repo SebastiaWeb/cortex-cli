@@ -36,7 +36,9 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.2",
     "@inquirer/prompts": "^7.0.0",
-    "commander": "^12.1.0"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "commander": "^12.1.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
