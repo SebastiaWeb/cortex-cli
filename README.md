@@ -62,6 +62,35 @@ Open any project on Machine B — Claude Code shows your full session history.
 
 ---
 
+## Claude Code MCP integration
+
+Install cortex as a Claude Code MCP server to use `sync`, `pull`, `status`, `convert`, and `init` directly from the chat:
+
+```bash
+npm install -g cortex-sync
+cortex init                           # configure once from terminal
+export CORTEX_PASSPHRASE="..."        # add to ~/.zshrc
+claude mcp add cortex -- cortex mcp  # register in Claude Code
+```
+
+| Tool | What it does |
+|---|---|
+| `sync` | Encrypt and upload `~/.claude/` |
+| `pull` | Download, decrypt, remap paths |
+| `status` | Show what's out of sync |
+| `convert` | Convert a skill to Antigravity or Cursor |
+| `init` | Configure storage (non-interactive) |
+
+**Environment variables used by the MCP server:**
+
+| Variable | Required for |
+|---|---|
+| `CORTEX_PASSPHRASE` | `sync`, `pull`, `status` |
+| `ANTHROPIC_API_KEY` | `convert` |
+| `CORTEX_GITHUB_TOKEN` | `init` with GitHub storage |
+
+---
+
 ## Storage backends
 
 ### GitHub private repo (recommended)
