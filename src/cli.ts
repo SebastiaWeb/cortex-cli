@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import { Command } from 'commander';
 import { convertCommand, type ConvertTarget } from './commands/convert.js';
 import { initCommand } from './commands/init.js';
@@ -6,12 +7,15 @@ import { pullCommand } from './commands/pull.js';
 import { statusCommand } from './commands/status.js';
 import { syncCommand } from './commands/sync.js';
 
+const require = createRequire(import.meta.url);
+const { version } = require('../package.json') as { version: string };
+
 const program = new Command();
 
 program
   .name('cortex')
   .description('Sync Claude Code context between machines with path remapping')
-  .version('0.0.1');
+  .version(version);
 
 program
   .command('init')
