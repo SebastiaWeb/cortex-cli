@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import { convertCommand, type ConvertTarget } from './commands/convert.js';
 import { initCommand } from './commands/init.js';
 import { mcpCommand } from './commands/mcp.js';
+import { setupMcpCommand } from './commands/setup-mcp.js';
 import { pullCommand } from './commands/pull.js';
 import { statusCommand } from './commands/status.js';
 import { syncCommand } from './commands/sync.js';
@@ -59,5 +60,10 @@ program
   .command('mcp')
   .description('Start the MCP server (for use with claude mcp add cortex -- cortex mcp)')
   .action(mcpCommand);
+
+program
+  .command('setup-mcp')
+  .description('Register cortex as a Claude Code MCP server automatically')
+  .action(setupMcpCommand);
 
 await program.parseAsync(process.argv);
