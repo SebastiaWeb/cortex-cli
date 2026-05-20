@@ -7,6 +7,10 @@ import { setupMcpCommand } from './commands/setup-mcp.js';
 import { pullCommand } from './commands/pull.js';
 import { statusCommand } from './commands/status.js';
 import { syncCommand } from './commands/sync.js';
+import { teamInitCommand } from './commands/team/init.js';
+import { teamPushCommand } from './commands/team/push.js';
+import { teamPullCommand } from './commands/team/pull.js';
+import { installCommand } from './commands/install.js';
 
 const require = createRequire(import.meta.url);
 const { version } = require('../package.json') as { version: string };
@@ -65,5 +69,31 @@ program
   .command('setup-mcp')
   .description('Register cortex as a Claude Code MCP server automatically')
   .action(setupMcpCommand);
+
+const team = program
+  .command('team')
+  .description('Share Claude Code context with your team');
+
+team
+  .command('init')
+  .description('Publish your Claude setup to a shared GitHub repo')
+  .option('--repo <url>', 'Team config repo URL (https://github.com/user/claude-config)')
+  .action((opts) => void teamInitCommand(opts));
+
+team
+  .command('push')
+  .description('Push local skill/CLAUDE.md/plugin changes to the team repo')
+  .action(() => void teamPushCommand());
+
+team
+  .command('pull')
+  .description('Pull team context updates and install with conflict resolution')
+  .action(() => void teamPullCommand());
+
+program
+  .command('install')
+  .description('First-time install of team Claude context from shared repo')
+  .option('--repo <url>', 'Team config repo URL (overrides stored config)')
+  .action((opts) => void installCommand(opts));
 
 await program.parseAsync(process.argv);
