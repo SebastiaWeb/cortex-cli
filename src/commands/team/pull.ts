@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadConfig } from '../../lib/config.js';
 import { pullTeamRepo, TEAM_DIR, hasLocalClone } from '../../lib/team-repo.js';
@@ -8,10 +8,11 @@ import {
 } from '../../lib/claude-skills.js';
 import { installPlugin } from '../../lib/claude-plugins.js';
 import { hasConflict, promptConflict, mergeContent } from '../../lib/conflict.js';
+import { readProjectConfig } from '../../lib/project-config.js';
 
 export async function teamPullCommand(): Promise<void> {
-  const config = await loadConfig();
-  const repoUrl = config.teamRepo;
+  await loadConfig();
+  const { repo: repoUrl } = await readProjectConfig();
   if (!repoUrl) throw new Error('No team repo configured. Run "cortex team init --repo <url>" first.');
   if (!(await hasLocalClone())) throw new Error('No local team clone found. Run "cortex install" first.');
 
