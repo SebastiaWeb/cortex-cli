@@ -1,10 +1,11 @@
 import { input } from '@inquirer/prompts';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { loadConfig, CONFIG_PATH } from '../../lib/config.js';
+import { loadConfig } from '../../lib/config.js';
 import { cloneTeamRepo, commitAndPush, TEAM_DIR } from '../../lib/team-repo.js';
 import { readSkillsFromDir, readFileFromPath, LOCAL_SKILLS_DIR, LOCAL_CLAUDE_MD } from '../../lib/claude-skills.js';
 import { getInstalledPluginIds } from '../../lib/claude-plugins.js';
+import { readProjectConfig, writeProjectConfig } from '../../lib/project-config.js';
 
 export async function teamInitCommand(opts: { repo?: string }): Promise<void> {
   const config = await loadConfig();
@@ -26,13 +27,13 @@ export async function teamInitCommand(opts: { repo?: string }): Promise<void> {
     for (const [filename, content] of skills) {
       await writeFile(join(TEAM_DIR, 'skills', filename), content, 'utf-8');
     }
-    console.log(`  Copied ${skills.size} skills`);
+    console.log(`  Copied ${skills.size} skills from .claude/skills/`);
   }
 
   const claudeMd = await readFileFromPath(LOCAL_CLAUDE_MD);
   if (claudeMd) {
     await writeFile(join(TEAM_DIR, 'CLAUDE.md'), claudeMd, 'utf-8');
-    console.log('  Copied CLAUDE.md');
+    console.log('  Copied .claude/CLAUDE.md');
   }
 
   const plugins = await getInstalledPluginIds();
@@ -42,9 +43,7 @@ export async function teamInitCommand(opts: { repo?: string }): Promise<void> {
 
   commitAndPush(repoUrl, token, 'feat: initial team Claude Code context');
 
-  const raw = JSON.parse(await readFile(CONFIG_PATH, 'utf-8'));
-  raw.teamRepo = repoUrl;
-  await writeFile(CONFIG_PATH, JSON.stringify(raw, null, 2), 'utf-8');
+  await writeProjectConfig({ repo: repoUrl });
 
   console.log('\n✓ Team repo initialized and pushed.');
   console.log(`  Devs can now run: cortex install --repo ${repoUrl}`);
