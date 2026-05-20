@@ -4,10 +4,11 @@ import { loadConfig } from '../../lib/config.js';
 import { pullTeamRepo, commitAndPush, TEAM_DIR, hasLocalClone } from '../../lib/team-repo.js';
 import { readSkillsFromDir, readFileFromPath, LOCAL_SKILLS_DIR, LOCAL_CLAUDE_MD } from '../../lib/claude-skills.js';
 import { getInstalledPluginIds } from '../../lib/claude-plugins.js';
+import { readProjectConfig } from '../../lib/project-config.js';
 
 export async function teamPushCommand(): Promise<void> {
   const config = await loadConfig();
-  const repoUrl = config.teamRepo;
+  const { repo: repoUrl } = await readProjectConfig();
   const token = config.githubToken;
   if (!repoUrl) throw new Error('No team repo configured. Run "cortex team init --repo <url>" first.');
   if (!token) throw new Error('No GitHub token found. Run "cortex init" first.');
