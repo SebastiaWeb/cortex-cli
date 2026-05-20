@@ -5,7 +5,7 @@ import { loadConfig } from '../../lib/config.js';
 import { cloneTeamRepo, commitAndPush, TEAM_DIR } from '../../lib/team-repo.js';
 import { readSkillsFromDir, readFileFromPath, LOCAL_SKILLS_DIR, LOCAL_CLAUDE_MD } from '../../lib/claude-skills.js';
 import { getInstalledPluginIds } from '../../lib/claude-plugins.js';
-import { readProjectConfig, writeProjectConfig } from '../../lib/project-config.js';
+import { writeProjectConfig } from '../../lib/project-config.js';
 
 export async function teamInitCommand(opts: { repo?: string }): Promise<void> {
   const config = await loadConfig();
