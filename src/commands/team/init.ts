@@ -1,11 +1,10 @@
 import { input } from '@inquirer/prompts';
-import { writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadConfig, CONFIG_PATH } from '../../lib/config.js';
 import { cloneTeamRepo, commitAndPush, TEAM_DIR } from '../../lib/team-repo.js';
 import { readSkillsFromDir, readFileFromPath, LOCAL_SKILLS_DIR, LOCAL_CLAUDE_MD } from '../../lib/claude-skills.js';
 import { getInstalledPluginIds } from '../../lib/claude-plugins.js';
-import { readFile } from 'node:fs/promises';
 
 export async function teamInitCommand(opts: { repo?: string }): Promise<void> {
   const config = await loadConfig();
