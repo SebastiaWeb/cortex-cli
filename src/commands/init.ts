@@ -19,6 +19,7 @@ export interface CortexConfig {
   githubToken?: string;  // PAT with repo scope
   githubOwner?: string;  // GitHub username (resolved from token during init)
   githubRepo?: string;   // repo name, default 'cortex-backup'
+  teamRepo?: string;     // URL of the shared team config repo
   tools: SupportedTool[];
   createdAt: string;
 }
