@@ -1,9 +1,8 @@
 import { readdir, readFile, mkdir, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 
-export const LOCAL_SKILLS_DIR = join(homedir(), '.claude', 'skills');
-export const LOCAL_CLAUDE_MD = join(homedir(), '.claude', 'CLAUDE.md');
+export const LOCAL_SKILLS_DIR = join(process.cwd(), '.claude', 'skills');
+export const LOCAL_CLAUDE_MD = join(process.cwd(), '.claude', 'CLAUDE.md');
 
 export async function readSkillsFromDir(dir: string): Promise<Map<string, string>> {
   const map = new Map<string, string>();
