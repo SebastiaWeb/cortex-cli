@@ -8,6 +8,8 @@ Claude Code stores your session history in `~/.claude/projects/` using absolute 
 npm install -g cortex-sync
 ```
 
+![cortex demo](demo/demo.gif)
+
 ---
 
 ## How it works
