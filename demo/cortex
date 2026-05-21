@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Mock cortex binary for demo recording
+
+CMD="$1"
+
+case "$CMD" in
+  sync)
+    echo "Reading ~/.claude/projects/ ..."
+    sleep 0.3
+    echo "Encrypting 3 projects (47 files)..."
+    sleep 0.4
+    echo "Uploading to GitHub (cortex-backup)..."
+    sleep 0.5
+    echo ""
+    echo "✓ Synced 47 files · 0 deleted"
+    ;;
+  pull)
+    echo "Downloading from GitHub (cortex-backup)..."
+    sleep 0.4
+    echo "Decrypting 3 projects..."
+    sleep 0.3
+    echo "Remapping paths:"
+    echo "  /Users/alice/myapp  →  /home/alice/work/myapp"
+    echo "  /Users/alice/api    →  /home/alice/work/api"
+    sleep 0.3
+    echo ""
+    echo "✓ Restored 47 files · 2 projects remapped"
+    ;;
+  status)
+    echo "Comparing local vs remote..."
+    sleep 0.4
+    echo ""
+    echo "  2 files changed locally (not yet synced)"
+    echo "  0 files changed remotely"
+    echo ""
+    echo "Run 'cortex sync' to upload."
+    ;;
+  setup-mcp)
+    echo "Found cortex at: /home/alice/.nvm/versions/node/v24/bin/cortex"
+    sleep 0.3
+    echo "? Encryption passphrase: ************"
+    sleep 0.5
+    echo ""
+    echo "✓ cortex MCP server registered in Claude Code."
+    echo "Restart Claude Code to activate it."
+    echo ""
+    echo "To verify: claude mcp list"
+    ;;
+  --version)
+    echo "cortex-sync v0.3.0"
+    ;;
+  *)
+    echo "cortex — sync Claude Code sessions between machines"
+    ;;
+esac

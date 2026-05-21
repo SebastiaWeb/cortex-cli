@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# Mock cortex binary for demo recording
+
+CMD="$1"
+SUBCMD="$2"
+
+case "$CMD" in
+  sync)
+    echo "Reading ~/.claude/projects/ ..."
+    sleep 0.3
+    echo "Encrypting 3 projects (47 files)..."
+    sleep 0.4
+    echo "Uploading to GitHub (cortex-backup)..."
+    sleep 0.5
+    echo ""
+    echo "✓ Synced 47 files · 0 deleted"
+    ;;
+  pull)
+    echo "Downloading from GitHub (cortex-backup)..."
+    sleep 0.4
+    echo "Decrypting 3 projects..."
+    sleep 0.3
+    echo "Remapping paths:"
+    echo "  /Users/alice/myapp  →  /home/alice/work/myapp"
+    echo "  /Users/alice/api    →  /home/alice/work/api"
+    sleep 0.3
+    echo ""
+    echo "✓ Restored 47 files · 2 projects remapped"
+    ;;
+  status)
+    echo "Comparing local vs remote..."
+    sleep 0.4
+    echo ""
+    echo "  2 files changed locally (not yet synced)"
+    echo "  0 files changed remotely"
+    echo ""
+    echo "Run 'cortex sync' to upload."
+    ;;
+  setup-mcp)
+    echo "Found cortex at: /home/alice/.local/bin/cortex"
+    sleep 0.3
+    echo "? Encryption passphrase: ************"
+    sleep 0.5
+    echo ""
+    echo "✓ cortex MCP server registered in Claude Code."
+    echo "Restart Claude Code to activate it."
+    ;;
+  install)
+    echo ""
+    echo "Installing from https://github.com/acme/claude-config into $(pwd)/.claude/"
+    sleep 0.4
+    echo "  + .claude/skills/tdd.md (new)"
+    sleep 0.2
+    echo "  + .claude/skills/code-review.md (new)"
+    sleep 0.2
+    echo "  + .claude/CLAUDE.md (new)"
+    sleep 0.2
+    echo "  Installing plugin: superpowers@claude-plugins-official"
+    sleep 0.3
+    echo "  ✔ Plugin installed"
+    sleep 0.2
+    echo "? Team passphrase (leave empty if sessions are not encrypted): ●●●●●●●●●●●●●●"
+    sleep 0.8
+    echo "  + 4 sessions installed"
+    sleep 0.2
+    echo ""
+    echo "✓ Team context installed. Restart Claude Code to activate."
+    ;;
+  team)
+    case "$SUBCMD" in
+      init)
+        echo ""
+        echo "Cloning https://github.com/acme/claude-config → ~/.cortex/team/"
+        sleep 0.5
+        echo "  Copied 3 skills from .claude/skills/"
+        sleep 0.2
+        echo "  Copied .claude/CLAUDE.md"
+        sleep 0.2
+        echo "  Generated cortex.json (1 plugins)"
+        sleep 0.4
+        echo ""
+        echo "⚠  Compartir sesiones de chat"
+        echo "   Tus sesiones de Claude Code para este proyecto se subirían"
+        echo "   al repo de equipo y serían visibles por todos los miembros."
+        sleep 0.8
+        echo "✔ ¿Compartir sesiones con el equipo? Yes"
+        sleep 0.4
+        echo "✔ ¿Encriptar las sesiones? Sí — encriptadas con passphrase del equipo (recomendado)"
+        sleep 0.4
+        echo "✔ Team passphrase (shared with all devs, min 12 chars): ●●●●●●●●●●●●●●"
+        sleep 0.8
+        echo "  Uploaded 4 sessions"
+        sleep 0.3
+        echo ""
+        echo "✓ Team repo initialized and pushed."
+        echo "  Devs can now run: cortex install --repo https://github.com/acme/claude-config"
+        ;;
+      push)
+        echo "Pulling latest from team repo…"
+        sleep 0.4
+        echo "✔ Team passphrase: ●●●●●●●●●●●●●●"
+        sleep 0.5
+        echo "  Uploaded 4 sessions"
+        sleep 0.2
+        echo ""
+        echo "✓ Pushed to team repo."
+        ;;
+      pull)
+        echo "Pulling from team repo…"
+        sleep 0.4
+        echo "  + tdd.md (new)"
+        sleep 0.2
+        echo "  + code-review.md (new)"
+        sleep 0.2
+        echo "  + CLAUDE.md (new)"
+        sleep 0.3
+        echo "✔ Team passphrase (to decrypt sessions): ●●●●●●●●●●●●●●"
+        sleep 0.6
+        echo "  + 4 sessions installed (restart Claude Code to see them)"
+        sleep 0.2
+        echo ""
+        echo "✓ Team context applied."
+        ;;
+    esac
+    ;;
+  --version)
+    echo "0.4.9"
+    ;;
+  *)
+    echo "cortex — sync Claude Code sessions between machines"
+    ;;
+esac
