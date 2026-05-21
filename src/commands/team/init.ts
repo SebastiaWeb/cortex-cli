@@ -1,11 +1,13 @@
 import { input, confirm, select, password } from '@inquirer/prompts';
 import { writeFile, mkdir } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { loadConfig } from '../../lib/config.js';
 import { cloneTeamRepo, commitAndPush, TEAM_DIR } from '../../lib/team-repo.js';
 import { readSkillsFromDir, readFileFromPath, LOCAL_SKILLS_DIR, LOCAL_CLAUDE_MD } from '../../lib/claude-skills.js';
 import { getInstalledPluginIds } from '../../lib/claude-plugins.js';
 import { writeProjectConfig } from '../../lib/project-config.js';
+import { identifyProject } from '../../lib/project-identifier.js';
 import { deriveKey } from '../../lib/crypto.js';
 import { pushSessions } from '../../lib/team-sessions.js';
 
@@ -75,6 +77,11 @@ export async function teamInitCommand(opts: { repo?: string }): Promise<void> {
         validate: (v) => v.length >= 12 || 'Minimum 12 characters',
       });
       derived = deriveKey(teamPassphrase, repoUrl);
+    }
+
+    // Ensure project has a stable ID even without git
+    if (!identifyProject(process.cwd())) {
+      await writeProjectConfig({ projectId: randomUUID() });
     }
 
     const count = await pushSessions(config.email, process.cwd(), derived);
