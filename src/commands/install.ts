@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { password } from '@inquirer/prompts';
 import { loadConfig } from '../lib/config.js';
 import { cloneTeamRepo, TEAM_DIR } from '../lib/team-repo.js';
 import {
@@ -8,6 +9,8 @@ import {
 } from '../lib/claude-skills.js';
 import { installPlugin } from '../lib/claude-plugins.js';
 import { readProjectConfig, writeProjectConfig } from '../lib/project-config.js';
+import { deriveKey } from '../lib/crypto.js';
+import { pullSessions } from '../lib/team-sessions.js';
 
 export async function installCommand(opts: { repo?: string }): Promise<void> {
   let config;
@@ -53,7 +56,24 @@ export async function installCommand(opts: { repo?: string }): Promise<void> {
     }
   }
 
-  await writeProjectConfig({ repo: repoUrl });
+  // Use repoUrl as projectId for non-git projects so all devs share the same identifier
+  await writeProjectConfig({ repo: repoUrl, projectId: repoUrl });
 
-  console.log('\n✓ Team context installed. Restart Claude Code to activate new skills and plugins.');
+  // Pull team sessions
+  let derived: ReturnType<typeof deriveKey> | undefined;
+  const { encryptSessions } = await readProjectConfig();
+  if (encryptSessions) {
+    const teamPassphrase = await password({
+      message: 'Team passphrase (to decrypt sessions):',
+      mask: '*',
+      validate: (v) => v.length >= 12 || 'Minimum 12 characters',
+    });
+    derived = deriveKey(teamPassphrase, repoUrl);
+  }
+  const sessionCount = await pullSessions(process.cwd(), derived);
+  if (sessionCount > 0) {
+    console.log(`  + ${sessionCount} sessions installed`);
+  }
+
+  console.log('\n✓ Team context installed. Restart Claude Code to activate.');
 }

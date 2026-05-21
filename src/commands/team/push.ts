@@ -1,5 +1,4 @@
 import { writeFile, mkdir } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { password } from '@inquirer/prompts';
 import { loadConfig } from '../../lib/config.js';
@@ -44,7 +43,7 @@ export async function teamPushCommand(): Promise<void> {
 
   if (shareSession) {
     if (!identifyProject(process.cwd())) {
-      await writeProjectConfig({ projectId: randomUUID() });
+      await writeProjectConfig({ projectId: repoUrl });
     }
     let derived: ReturnType<typeof deriveKey> | undefined;
     if (encryptSessions) {
