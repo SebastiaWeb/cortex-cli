@@ -1,11 +1,13 @@
 import { writeFile, mkdir } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { password } from '@inquirer/prompts';
 import { loadConfig } from '../../lib/config.js';
 import { pullTeamRepo, commitAndPush, TEAM_DIR, hasLocalClone } from '../../lib/team-repo.js';
 import { readSkillsFromDir, readFileFromPath, LOCAL_SKILLS_DIR, LOCAL_CLAUDE_MD } from '../../lib/claude-skills.js';
 import { getInstalledPluginIds } from '../../lib/claude-plugins.js';
-import { readProjectConfig } from '../../lib/project-config.js';
+import { readProjectConfig, writeProjectConfig } from '../../lib/project-config.js';
+import { identifyProject } from '../../lib/project-identifier.js';
 import { deriveKey } from '../../lib/crypto.js';
 import { pushSessions } from '../../lib/team-sessions.js';
 
@@ -41,6 +43,9 @@ export async function teamPushCommand(): Promise<void> {
   );
 
   if (shareSession) {
+    if (!identifyProject(process.cwd())) {
+      await writeProjectConfig({ projectId: randomUUID() });
+    }
     let derived: ReturnType<typeof deriveKey> | undefined;
     if (encryptSessions) {
       const teamPassphrase = await password({
