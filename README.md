@@ -65,6 +65,49 @@ Open any project on Machine B — Claude Code shows your full session history.
 
 ---
 
+## Team context
+
+Share skills, CLAUDE.md, plugins, and chat sessions with your team via a shared GitHub repo.
+
+```bash
+# Tech Lead — one-time setup
+cortex team init --repo https://github.com/your-org/claude-config
+
+# Push your local .claude/ context + sessions (if opted in)
+cortex team push
+
+# Dev — pull team context + sessions
+cortex team pull
+
+# New dev — first-time install
+cortex install --repo https://github.com/your-org/claude-config
+```
+
+### What gets shared
+
+| What | Source | Destination |
+|---|---|---|
+| Skills | `.claude/skills/*.md` | `skills/` in team repo |
+| CLAUDE.md | `.claude/CLAUDE.md` | `CLAUDE.md` in team repo |
+| Plugins | Installed Claude plugins | `cortex.json → plugins[]` |
+| Sessions (opt-in) | `~/.claude/projects/<project>/` | `sessions/<email>/<project-id>/` |
+
+### Session sharing
+
+During `cortex team init` you are asked once whether to share your Claude Code chat sessions with the team. If you accept:
+
+- Sessions are uploaded on every `cortex team push`
+- Teammates get your sessions (paths remapped to their machine) on `cortex team pull`
+- Claude Code shows all team sessions natively — no extra steps
+
+You can choose to encrypt sessions with a shared team passphrase (AES-256-GCM). Share the passphrase with your team via a password manager — it is never stored by cortex.
+
+**Two machines, same GitHub user:** Each machine generates unique session IDs, so pushing from both machines never creates duplicates.
+
+> **Privacy:** Sessions may contain source code, API calls, and sensitive context. Only opt in if your team has a shared understanding that sessions are visible to all members.
+
+---
+
 ## Claude Code MCP integration
 
 Use `sync`, `pull`, `status`, `convert`, and `init` directly from the Claude Code chat — one command does everything:
