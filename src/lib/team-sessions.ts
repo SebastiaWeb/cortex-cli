@@ -70,34 +70,39 @@ export async function copySessionsFromRepo(
       continue;
     }
     for (const file of files) {
-      const isEnc = file.endsWith('.jsonl.enc');
-      const isPlain = file.endsWith('.jsonl') && !isEnc;
-      if (!isEnc && !isPlain) continue;
-
-      let data = await readFile(join(projDir, file));
-      if (isEnc && derived) {
-        data = decrypt(data, derived);
-      }
-
-      const remoteCwd = extractCwdFromJsonl(data);
-      if (remoteCwd && remoteCwd !== localCwd) {
-        data = remapJsonlBuffer(data, remoteCwd, localCwd);
-      }
-
-      const destFilename = isEnc ? file.slice(0, -'.enc'.length) : file;
-      const destPath = join(destDir, destFilename);
-
-      let finalPath = destPath;
       try {
-        await readFile(destPath);
-        // File already exists — suffix with first 3 chars of dev name
-        const initials = email.split('@')[0].slice(0, 3);
-        const base = destFilename.slice(0, -'.jsonl'.length);
-        finalPath = join(destDir, `${base}.${initials}.jsonl`);
-      } catch { /* doesn't exist, use destPath */ }
+        const isEnc = file.endsWith('.jsonl.enc');
+        const isPlain = file.endsWith('.jsonl') && !isEnc;
+        if (!isEnc && !isPlain) continue;
+        if (isEnc && !derived) continue; // can't decrypt without passphrase — skip silently
 
-      await writeFile(finalPath, data);
-      count++;
+        let data: Buffer = await readFile(join(projDir, file));
+        if (isEnc && derived) {
+          data = decrypt(data, derived);
+        }
+
+        const remoteCwd = extractCwdFromJsonl(data);
+        if (remoteCwd && remoteCwd !== localCwd) {
+          data = remapJsonlBuffer(data, remoteCwd, localCwd);
+        }
+
+        const destFilename = isEnc ? file.slice(0, -'.enc'.length) : file;
+        const destPath = join(destDir, destFilename);
+
+        let finalPath = destPath;
+        try {
+          await readFile(destPath);
+          // File already exists — suffix with first 3 chars of dev name
+          const initials = email.split('@')[0].slice(0, 3);
+          const base = destFilename.slice(0, -'.jsonl'.length);
+          finalPath = join(destDir, `${base}.${initials}.jsonl`);
+        } catch { /* doesn't exist, use destPath */ }
+
+        await writeFile(finalPath, data);
+        count++;
+      } catch {
+        continue;
+      }
     }
   }
   return count;

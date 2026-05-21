@@ -113,6 +113,16 @@ describe('copySessionsFromRepo', () => {
     expect(written.cwd).toBe('/local/cwd');
   });
 
+  it('skips encrypted files when no derived key provided', async () => {
+    const devDir = join(sessionsRoot, 'alice@co.com', 'proj-id');
+    await mkdir(devDir, { recursive: true });
+    // Write a fake encrypted file
+    await writeFile(join(devDir, 'abc.jsonl.enc'), Buffer.from('fake-cipher-bytes'));
+
+    const count = await copySessionsFromRepo(sessionsRoot, 'proj-id', dest, '/local/cwd');
+    expect(count).toBe(0); // skipped, not copied
+  });
+
   it('suffixes filename when collision from second dev', async () => {
     // Alice and Bob both have abc.jsonl for the same project
     for (const dev of ['alice@co.com', 'bob@co.com']) {
