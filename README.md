@@ -10,7 +10,7 @@ npm install -g cortex-sync
 
 Works on **Linux**, **macOS**, and **Windows**. The `cortex` command is available immediately after install — no shell restart needed.
 
-![cortex demo](demo/demo.gif)
+![cortex demo](https://raw.githubusercontent.com/SebastiaWeb/cortex-cli/main/demo/demo.gif)
 
 ---
 
@@ -57,6 +57,8 @@ Open any project on Machine B — Claude Code shows your full session history.
 ## Team context sharing
 
 Share skills, CLAUDE.md, plugins, and chat sessions with your whole team through a shared GitHub repo.
+
+![cortex team demo](https://raw.githubusercontent.com/SebastiaWeb/cortex-cli/main/demo/demo-team.gif)
 
 ### Tech Lead — one-time setup
 
