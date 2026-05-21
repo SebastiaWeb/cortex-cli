@@ -38,4 +38,11 @@ describe('project-config', () => {
     expect(raw.projectId).toBe('my-id');
     expect(raw.repo).toBe('https://github.com/user/new-repo');
   });
+
+  it('round-trips shareSession and encryptSessions', async () => {
+    await writeProjectConfig({ repo: 'https://github.com/u/r', shareSession: true, encryptSessions: false }, tmp);
+    const result = await readProjectConfig(tmp);
+    expect(result.shareSession).toBe(true);
+    expect(result.encryptSessions).toBe(false);
+  });
 });

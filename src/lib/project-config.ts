@@ -3,6 +3,8 @@ import { join } from 'node:path';
 
 export interface ProjectCortexConfig {
   repo?: string;
+  shareSession?: boolean;
+  encryptSessions?: boolean;
   [key: string]: unknown;
 }
 
