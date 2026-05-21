@@ -1,6 +1,6 @@
 {
   "name": "cortex-sync",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Sync Claude Code sessions between machines with automatic path remapping and skill conversion",
   "license": "AGPL-3.0",
   "type": "module",
@@ -9,6 +9,7 @@
   },
   "files": [
     "dist",
+    "scripts",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
@@ -31,7 +32,8 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "postinstall": "node scripts/postinstall.cjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.2",
