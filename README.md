@@ -1,12 +1,14 @@
 # cortex
 
-**Sync Claude Code sessions between machines with automatic path remapping.**
+**Sync Claude Code sessions between machines. Share team context automatically.**
 
-Claude Code stores your session history in `~/.claude/projects/` using absolute paths. Switch from your Mac to a Linux server and those sessions are gone — the paths don't match. `cortex` fixes that.
+Claude Code stores your session history in `~/.claude/projects/` using absolute paths. Switch from your Mac to a Linux server and those sessions are gone — the paths don't match. `cortex` fixes that, and also lets your whole team share sessions, skills, and context through a shared GitHub repo.
 
 ```bash
 npm install -g cortex-sync
 ```
+
+Works on **Linux**, **macOS**, and **Windows**. The `cortex` command is available immediately after install — no shell restart needed.
 
 ![cortex demo](demo/demo.gif)
 
@@ -29,7 +31,7 @@ Machine A (Mac)                        Machine B (Linux)
 
 ---
 
-## Quick start
+## Quick start — personal sync
 
 ```bash
 # 1. Install
@@ -52,35 +54,52 @@ Open any project on Machine B — Claude Code shows your full session history.
 
 ---
 
-## Commands
+## Team context sharing
 
-| Command | What it does |
-|---|---|
-| `cortex init` | Configure storage, email, and passphrase |
-| `cortex sync` | Encrypt `~/.claude/` and upload |
-| `cortex pull` | Download, decrypt, remap paths |
-| `cortex status` | Show what's out of sync (no download) |
-| `cortex convert <file> --to <target>` | Convert a Claude Code skill |
-| `cortex setup-mcp` | Register cortex as a Claude Code MCP server |
+Share skills, CLAUDE.md, plugins, and chat sessions with your whole team through a shared GitHub repo.
 
----
-
-## Team context
-
-Share skills, CLAUDE.md, plugins, and chat sessions with your team via a shared GitHub repo.
+### Tech Lead — one-time setup
 
 ```bash
-# Tech Lead — one-time setup
+cd your-project/
+
+# Initialize the team repo and optionally share your sessions
 cortex team init --repo https://github.com/your-org/claude-config
 
-# Push your local .claude/ context + sessions (if opted in)
+# Push updated context anytime
 cortex team push
+```
 
-# Dev — pull team context + sessions
+During `cortex team init` you are asked once:
+- **Share sessions?** — whether to share your Claude Code sessions with the team
+- **Encrypt?** — whether to encrypt them (AES-256-GCM, recommended)
+
+If you choose to share, sessions are uploaded on every `cortex team push`.
+
+### Dev — first-time install
+
+```bash
+cd your-project/
+
+cortex install --repo https://github.com/your-org/claude-config
+```
+
+This single command:
+- Installs team skills into `.claude/skills/`
+- Installs team `CLAUDE.md`
+- Installs required Claude plugins
+- Downloads and installs all team sessions (paths remapped to your machine automatically)
+
+Claude Code shows all team sessions natively — no extra steps. Restart Claude Code after running.
+
+### Day-to-day
+
+```bash
+# Pull latest team context + new sessions from teammates
 cortex team pull
 
-# New dev — first-time install
-cortex install --repo https://github.com/your-org/claude-config
+# Push your updated sessions to the team
+cortex team push
 ```
 
 ### What gets shared
@@ -92,37 +111,42 @@ cortex install --repo https://github.com/your-org/claude-config
 | Plugins | Installed Claude plugins | `cortex.json → plugins[]` |
 | Sessions (opt-in) | `~/.claude/projects/<project>/` | `sessions/<email>/<project-id>/` |
 
-### Session sharing
+### Session encryption
 
-During `cortex team init` you are asked once whether to share your Claude Code chat sessions with the team. If you accept:
+Sessions are encrypted with AES-256-GCM using a shared team passphrase. The passphrase is **never stored** — share it with teammates via a password manager. Everyone with the passphrase can decrypt each other's sessions.
 
-- Sessions are uploaded on every `cortex team push`
-- Teammates get your sessions (paths remapped to their machine) on `cortex team pull`
-- Claude Code shows all team sessions natively — no extra steps
-
-You can choose to encrypt sessions with a shared team passphrase (AES-256-GCM). Share the passphrase with your team via a password manager — it is never stored by cortex.
-
-**Two machines, same GitHub user:** Each machine generates unique session IDs, so pushing from both machines never creates duplicates.
+**Two machines, same GitHub user:** Each machine generates unique session IDs, so pushing from two machines never creates duplicates.
 
 > **Privacy:** Sessions may contain source code, API calls, and sensitive context. Only opt in if your team has a shared understanding that sessions are visible to all members.
 
 ---
 
+## Commands
+
+| Command | What it does |
+|---|---|
+| `cortex init` | Configure storage, email, and passphrase |
+| `cortex sync` | Encrypt `~/.claude/` and upload |
+| `cortex pull` | Download, decrypt, remap paths |
+| `cortex status` | Show what's out of sync (no download) |
+| `cortex team init` | Initialize team repo and set session sharing preference |
+| `cortex team push` | Push skills, CLAUDE.md, and sessions to team repo |
+| `cortex team pull` | Pull team context and sessions from repo |
+| `cortex install` | First-time install from team repo (skills + sessions) |
+| `cortex convert <file> --to <target>` | Convert a Claude Code skill |
+| `cortex setup-mcp` | Register cortex as a Claude Code MCP server |
+
+---
+
 ## Claude Code MCP integration
 
-Use `sync`, `pull`, `status`, `convert`, and `init` directly from the Claude Code chat — one command does everything:
+Use `sync`, `pull`, `status`, `convert`, and `init` directly from the Claude Code chat:
 
 ```bash
-npm install -g cortex-sync
-cortex init       # configure storage and passphrase
 cortex setup-mcp  # registers cortex in Claude Code automatically
 ```
 
-That's it. Restart Claude Code and you're done.
-
-### What setup-mcp does
-
-`cortex setup-mcp` detects the binary path, prompts for your passphrase once, and runs `claude mcp add` with the correct arguments — no manual PATH configuration needed.
+Restart Claude Code and you're done.
 
 ### Available MCP tools
 
@@ -134,7 +158,7 @@ That's it. Restart Claude Code and you're done.
 | `convert` | Convert a skill to Antigravity or Cursor |
 | `init` | Configure storage (non-interactive) |
 
-### Environment variables (advanced / manual setup)
+### Environment variables
 
 | Variable | Required for |
 |---|---|
@@ -147,8 +171,6 @@ That's it. Restart Claude Code and you're done.
 ## Storage backends
 
 ### GitHub private repo (recommended)
-
-No OAuth app needed — just a Personal Access Token.
 
 ```bash
 cortex init
@@ -172,26 +194,24 @@ cortex init
 
 ## Skill conversion
 
-Convert Claude Code skills to other AI tool formats using your own Anthropic API key.
+Convert Claude Code skills to other AI tool formats.
 
 ```bash
 # To Antigravity  →  .agent/skills/<name>/SKILL.md
 cortex convert ~/.claude/skills/tdd.md --to antigravity --output-dir ./my-project
 
-# To Cursor  →  .cursorrules (intelligent append, no duplicates across runs)
+# To Cursor  →  .cursorrules
 cortex convert ~/.claude/skills/tdd.md --to cursor --output-dir ./my-project
 
 # Both at once
 cortex convert ~/.claude/skills/tdd.md --to all --output-dir ./my-project
 ```
 
-API key priority: `ANTHROPIC_API_KEY` env → `~/.cortex/api-key.enc` (encrypted) → interactive prompt.
-
 ---
 
 ## Security
 
-Everything is encrypted **before** leaving your machine. Your storage provider sees only ciphertext.
+Everything is encrypted **before** leaving your machine.
 
 | What | How |
 |---|---|
@@ -199,44 +219,34 @@ Everything is encrypted **before** leaving your machine. Your storage provider s
 | Key derivation | PBKDF2, 600,000 iterations, SHA-256 |
 | Salt | SHA-256(lowercase(your email)) |
 | Passphrase | Never stored anywhere — derived fresh each session |
-| Secret detection | Warns before encrypting if API keys or PEM keys are found in your files |
-
-The GitHub PAT is stored in `~/.cortex/config.json` (your machine, your user). The Anthropic API key — if you choose to save it — goes to `~/.cortex/api-key.enc`, encrypted with your sync passphrase.
+| Team sessions | Encrypted with shared passphrase, salt = team repo URL |
 
 ---
 
 ## How path remapping works
 
-Claude Code encodes project paths into directory names by replacing every non-alphanumeric character with `-`:
+Claude Code encodes project paths by replacing every non-alphanumeric character with `-`:
 
 ```
 /home/alice/work/myapp  →  -home-alice-work-myapp
 ```
 
-This encoding is **lossy** — it cannot be reversed. `cortex` reads the `cwd` field inside each JSONL session file, which holds the original absolute path, and uses that as the source of truth.
+On `cortex pull` or `cortex team pull`, for each session:
 
-On `cortex pull`, for each project:
+1. Reads `cwd` from the JSONL to get the original path
+2. Identifies the project via `git remote.origin.url` or first commit hash
+3. Rewrites only the 4 structural fields per line: `cwd`, `filePath`, `file_path`, `file.filePath`
 
-1. Reads `cwd` from the session JSONL to get the original path
-2. Identifies the project via `git remote.origin.url` or `git rev-list --max-parents=0 HEAD`
-3. Looks up your local path in `~/.cortex/path-mappings.json` (prompts once if unknown)
-4. Rewrites only the 4 structural fields per line: `cwd`, `filePath`, `file_path`, `file.filePath`
-5. Renames `~/.claude/projects/<old-encoded>/` → `<new-encoded>/`
+Conversation history and text responses are **never modified**.
 
-Conversation history, command outputs, and text responses are **never modified**.
-
-For projects without git, drop a `cortex.json` in the project root:
-
-```json
-{ "projectId": "my-unique-id" }
-```
+For projects without git, `cortex` automatically assigns a stable project ID on first `cortex team init` or `cortex team push`.
 
 ---
 
 ## Requirements
 
 - Node.js ≥ 20
-- Claude Code installed on each machine you want to sync
+- Claude Code installed on each machine
 
 ---
 
