@@ -42,9 +42,6 @@ export async function teamPushCommand(): Promise<void> {
   );
 
   if (shareSession) {
-    if (!identifyProject(process.cwd())) {
-      await writeProjectConfig({ projectId: repoUrl });
-    }
     let derived: ReturnType<typeof deriveKey> | undefined;
     if (encryptSessions) {
       const teamPassphrase = await password({
@@ -54,7 +51,7 @@ export async function teamPushCommand(): Promise<void> {
       });
       derived = deriveKey(teamPassphrase, repoUrl);
     }
-    const count = await pushSessions(config.email, process.cwd(), derived);
+    const count = await pushSessions(config.email, process.cwd(), derived, repoUrl);
     if (count > 0) console.log(`  Uploaded ${count} sessions`);
   }
 

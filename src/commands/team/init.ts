@@ -78,12 +78,7 @@ export async function teamInitCommand(opts: { repo?: string }): Promise<void> {
       derived = deriveKey(teamPassphrase, repoUrl);
     }
 
-    // Ensure project has a stable ID even without git — use repoUrl so all devs share it
-    if (!identifyProject(process.cwd())) {
-      await writeProjectConfig({ projectId: repoUrl });
-    }
-
-    const count = await pushSessions(config.email, process.cwd(), derived);
+    const count = await pushSessions(config.email, process.cwd(), derived, repoUrl);
     if (count > 0) {
       commitAndPush(repoUrl, token, `feat: share ${count} team sessions`);
       console.log(`  Uploaded ${count} sessions`);

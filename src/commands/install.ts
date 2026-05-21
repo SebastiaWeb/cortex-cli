@@ -56,21 +56,22 @@ export async function installCommand(opts: { repo?: string }): Promise<void> {
     }
   }
 
-  // Use repoUrl as projectId for non-git projects so all devs share the same identifier
-  await writeProjectConfig({ repo: repoUrl, projectId: repoUrl });
+  await writeProjectConfig({ repo: repoUrl });
 
-  // Pull team sessions
-  let derived: ReturnType<typeof deriveKey> | undefined;
-  const { encryptSessions } = await readProjectConfig();
-  if (encryptSessions) {
+  // Pull team sessions — always use repoUrl as projectId (all devs share it)
+  // Try without passphrase first; if sessions are encrypted, prompt for it
+  let sessionCount = await pullSessions(process.cwd(), undefined, repoUrl);
+  if (sessionCount === 0) {
+    // Sessions might be encrypted — ask for passphrase and retry
     const teamPassphrase = await password({
-      message: 'Team passphrase (to decrypt sessions):',
+      message: 'Team passphrase (leave empty if sessions are not encrypted):',
       mask: '*',
-      validate: (v) => v.length >= 12 || 'Minimum 12 characters',
-    });
-    derived = deriveKey(teamPassphrase, repoUrl);
+    }).catch(() => '');
+    if (teamPassphrase.length >= 12) {
+      const derived = deriveKey(teamPassphrase, repoUrl);
+      sessionCount = await pullSessions(process.cwd(), derived, repoUrl);
+    }
   }
-  const sessionCount = await pullSessions(process.cwd(), derived);
   if (sessionCount > 0) {
     console.log(`  + ${sessionCount} sessions installed`);
   }

@@ -112,21 +112,23 @@ export async function pushSessions(
   email: string,
   cwd: string,
   derived?: DerivedKey,
+  projectId?: string,
 ): Promise<number> {
-  const projectInfo = identifyProject(cwd);
-  if (!projectInfo) return 0;
+  const id = projectId ?? identifyProject(cwd)?.projectId;
+  if (!id) return 0;
   const srcDir = localSessionsDir(cwd);
-  const destDir = teamSessionsDir(TEAM_DIR, email, projectInfo.projectId);
+  const destDir = teamSessionsDir(TEAM_DIR, email, id);
   return copySessionsToTeamDir(srcDir, destDir, derived);
 }
 
 export async function pullSessions(
   cwd: string,
   derived?: DerivedKey,
+  projectId?: string,
 ): Promise<number> {
-  const projectInfo = identifyProject(cwd);
-  if (!projectInfo) return 0;
+  const id = projectId ?? identifyProject(cwd)?.projectId;
+  if (!id) return 0;
   const sessionsRoot = join(TEAM_DIR, 'sessions');
   const destDir = localSessionsDir(cwd);
-  return copySessionsFromRepo(sessionsRoot, projectInfo.projectId, destDir, cwd, derived);
+  return copySessionsFromRepo(sessionsRoot, id, destDir, cwd, derived);
 }
