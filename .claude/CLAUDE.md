@@ -107,7 +107,7 @@ node dist/cli.js --help
 
 ## Current version
 
-`0.4.11` — published on npm as `cortex-sync`
+`0.4.12` — published on npm as `cortex-sync`
 
 ## Demo assets
 
