@@ -5,7 +5,7 @@ import { loadConfig } from '../lib/config.js';
 import { cloneTeamRepo, TEAM_DIR } from '../lib/team-repo.js';
 import {
   readSkillsFromDir, writeSkillToDir, readFileFromPath, writeFileToPath,
-  LOCAL_SKILLS_DIR, LOCAL_CLAUDE_MD,
+  LOCAL_SKILLS_DIR, LOCAL_CLAUDE_MD, injectCortexPathBlock,
 } from '../lib/claude-skills.js';
 import { installPlugin } from '../lib/claude-plugins.js';
 import { readProjectConfig, writeProjectConfig } from '../lib/project-config.js';
@@ -37,11 +37,10 @@ export async function installCommand(opts: { repo?: string }): Promise<void> {
     console.log(`  + .claude/skills/${filename}`);
   }
 
-  const claudeMd = await readFileFromPath(join(TEAM_DIR, 'CLAUDE.md'));
-  if (claudeMd) {
-    await writeFileToPath(LOCAL_CLAUDE_MD, claudeMd);
-    console.log('  + .claude/CLAUDE.md');
-  }
+  const teamMd = await readFileFromPath(join(TEAM_DIR, 'CLAUDE.md')) ?? '';
+  const claudeMdWithBlock = injectCortexPathBlock(teamMd, process.cwd());
+  await writeFileToPath(LOCAL_CLAUDE_MD, claudeMdWithBlock);
+  if (teamMd) console.log('  + .claude/CLAUDE.md');
 
   let cortexJson: { plugins?: string[] } = {};
   try {
