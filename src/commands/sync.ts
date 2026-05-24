@@ -8,6 +8,12 @@ import { detectSecrets } from '../lib/secrets-detector.js';
 import { extractCwdFromJsonl } from '../lib/jsonl-remapper.js';
 import { identifyProject } from '../lib/project-identifier.js';
 
+function isSafeGitHubPath(path: string): boolean {
+  return path.split('/').every(
+    (c) => c.length > 0 && c !== '.' && c !== '..' && c !== '.git' && !/[\x00-\x1f\x7f]/.test(c),
+  );
+}
+
 export interface SyncOptions {
   target?: string;
   skipSecretsCheck?: boolean;
@@ -78,11 +84,20 @@ export async function syncCommand(opts: SyncOptions = {}): Promise<void> {
     `Diff — added: ${diff.added.length}, modified: ${diff.modified.length}, removed: ${diff.removed.length}, unchanged: ${diff.unchanged.length}`,
   );
 
+  let skipped = 0;
   for (const path of [...diff.added, ...diff.modified]) {
+    if (!isSafeGitHubPath(path)) { skipped++; continue; }
     const content = contents.get(path)!;
     const enc = encrypt(content, derived);
     local.files[path].encryptedSize = enc.length;
-    await backend.write('files/' + path, enc);
+    try {
+      await backend.write('files/' + path, enc);
+    } catch (e) {
+      throw new Error(`Upload failed for "${path}": ${(e as Error).message}`);
+    }
+  }
+  if (skipped > 0) {
+    console.warn(`  ⚠ Skipped ${skipped} file(s) with paths incompatible with GitHub (control chars, .git, etc.)`);
   }
   for (const path of diff.removed) {
     await backend.remove('files/' + path);
