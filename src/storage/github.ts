@@ -38,7 +38,8 @@ export class GitHubBackend implements IStorageBackend {
   }
 
   private url(path: string): string {
-    return `${this.apiBase}/contents/${path}`;
+    const encoded = path.split('/').map(encodeURIComponent).join('/');
+    return `${this.apiBase}/contents/${encoded}`;
   }
 
   private async getSha(path: string): Promise<string | null> {
