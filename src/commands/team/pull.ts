@@ -5,7 +5,7 @@ import { loadConfig } from '../../lib/config.js';
 import { pullTeamRepo, TEAM_DIR, hasLocalClone } from '../../lib/team-repo.js';
 import {
   readSkillsFromDir, writeSkillToDir, readFileFromPath, writeFileToPath,
-  LOCAL_SKILLS_DIR, LOCAL_CLAUDE_MD,
+  LOCAL_SKILLS_DIR, LOCAL_CLAUDE_MD, injectCortexPathBlock,
 } from '../../lib/claude-skills.js';
 import { installPlugin } from '../../lib/claude-plugins.js';
 import { hasConflict, promptConflict, mergeContent } from '../../lib/conflict.js';
@@ -49,15 +49,15 @@ export async function teamPullCommand(): Promise<void> {
   if (remoteMd) {
     const localMd = await readFileFromPath(LOCAL_CLAUDE_MD);
     if (!localMd) {
-      await writeFileToPath(LOCAL_CLAUDE_MD, remoteMd);
+      await writeFileToPath(LOCAL_CLAUDE_MD, injectCortexPathBlock(remoteMd, process.cwd()));
       console.log('  + CLAUDE.md (new)');
     } else if (hasConflict(localMd, remoteMd)) {
       const resolution = await promptConflict('CLAUDE.md', localMd, remoteMd);
       if (resolution === 'overwrite') {
-        await writeFileToPath(LOCAL_CLAUDE_MD, remoteMd);
+        await writeFileToPath(LOCAL_CLAUDE_MD, injectCortexPathBlock(remoteMd, process.cwd()));
         console.log('  ✓ CLAUDE.md overwritten');
       } else if (resolution === 'merge') {
-        await writeFileToPath(LOCAL_CLAUDE_MD, mergeContent(localMd, remoteMd));
+        await writeFileToPath(LOCAL_CLAUDE_MD, injectCortexPathBlock(mergeContent(localMd, remoteMd), process.cwd()));
         console.log('  ✓ CLAUDE.md merged');
       } else {
         console.log('  ~ CLAUDE.md skipped');
