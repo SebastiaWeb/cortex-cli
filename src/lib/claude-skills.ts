@@ -38,3 +38,27 @@ export async function writeFileToPath(filePath: string, content: string): Promis
   await mkdir(dirname(filePath), { recursive: true });
   await writeFile(filePath, content, 'utf-8');
 }
+
+const CORTEX_BLOCK_START = '<!-- cortex-sync:start -->';
+const CORTEX_BLOCK_END = '<!-- cortex-sync:end -->';
+
+export function injectCortexPathBlock(content: string, cwd: string): string {
+  const block = [
+    CORTEX_BLOCK_START,
+    `> **[cortex-sync]** Project root on this machine: \`${cwd}\``,
+    `> Sessions shared via cortex-sync may reference paths from other machines. Always resolve file operations against the project root above.`,
+    CORTEX_BLOCK_END,
+  ].join('\n');
+
+  const startIdx = content.indexOf(CORTEX_BLOCK_START);
+  const endIdx = content.indexOf(CORTEX_BLOCK_END);
+
+  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+    const before = content.slice(0, startIdx);
+    const after = content.slice(endIdx + CORTEX_BLOCK_END.length);
+    return before + block + after;
+  }
+
+  const separator = content.length > 0 ? '\n\n' : '';
+  return block + separator + content;
+}
