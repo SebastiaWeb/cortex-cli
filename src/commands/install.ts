@@ -38,8 +38,9 @@ export async function installCommand(opts: { repo?: string }): Promise<void> {
   }
 
   const teamMd = await readFileFromPath(join(TEAM_DIR, 'CLAUDE.md')) ?? '';
-  const claudeMdWithBlock = injectCortexPathBlock(teamMd, process.cwd());
-  await writeFileToPath(LOCAL_CLAUDE_MD, claudeMdWithBlock);
+  // Always write the local CLAUDE.md so the cortex path hint is present.
+  // If the team has no CLAUDE.md, the block alone is sufficient for path resolution.
+  await writeFileToPath(LOCAL_CLAUDE_MD, injectCortexPathBlock(teamMd, process.cwd()));
   if (teamMd) console.log('  + .claude/CLAUDE.md');
 
   let cortexJson: { plugins?: string[] } = {};
