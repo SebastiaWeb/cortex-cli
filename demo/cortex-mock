@@ -6,26 +6,42 @@ SUBCMD="$2"
 
 case "$CMD" in
   sync)
-    echo "Reading ~/.claude/projects/ ..."
-    sleep 0.3
-    echo "Encrypting 3 projects (47 files)..."
-    sleep 0.4
-    echo "Uploading to GitHub (cortex-backup)..."
-    sleep 0.5
+    echo "✔ Encryption passphrase: ●●●●●●●●●●●●●●"
+    echo "Sync target: GitHub (alice/cortex-backup)"
     echo ""
-    echo "✓ Synced 47 files · 0 deleted"
+    for i in 12 28 47; do
+      printf "\r  Reading… %d files" "$i"
+      sleep 0.15
+    done
+    printf "\r  47 files read                    \n"
+    sleep 0.2
+    echo ""
+    echo "Diff — added: 47, modified: 0, removed: 0, unchanged: 0"
+    for i in 10 22 35 47; do
+      printf "\r  Uploading… %d/47 files" "$i"
+      sleep 0.35
+    done
+    printf "\n"
+    echo ""
+    echo "✓ Sync complete — 47 uploaded, 0 deleted."
     ;;
   pull)
-    echo "Downloading from GitHub (cortex-backup)..."
-    sleep 0.4
-    echo "Decrypting 3 projects..."
+    echo "✔ Encryption passphrase: ●●●●●●●●●●●●●●"
+    echo "Pull source: GitHub (alice/cortex-backup)"
+    echo ""
+    echo "Diff — to download: 47 (new: 47, changed: 0), to remove locally: 0"
     sleep 0.3
     echo "Remapping paths:"
     echo "  /Users/alice/myapp  →  /home/alice/work/myapp"
     echo "  /Users/alice/api    →  /home/alice/work/api"
-    sleep 0.3
+    sleep 0.2
+    for i in 12 26 40 47; do
+      printf "\r  Downloading… %d/47 files" "$i"
+      sleep 0.35
+    done
+    printf "\n"
     echo ""
-    echo "✓ Restored 47 files · 2 projects remapped"
+    echo "✓ Pull complete — 47 files restored."
     ;;
   status)
     echo "Comparing local vs remote..."
@@ -39,7 +55,7 @@ case "$CMD" in
   setup-mcp)
     echo "Found cortex at: /home/alice/.local/bin/cortex"
     sleep 0.3
-    echo "? Encryption passphrase: ************"
+    echo "✔ Encryption passphrase: ●●●●●●●●●●●●●●"
     sleep 0.5
     echo ""
     echo "✓ cortex MCP server registered in Claude Code."
@@ -49,18 +65,18 @@ case "$CMD" in
     echo ""
     echo "Installing from https://github.com/acme/claude-config into $(pwd)/.claude/"
     sleep 0.4
-    echo "  + .claude/skills/tdd.md (new)"
-    sleep 0.2
-    echo "  + .claude/skills/code-review.md (new)"
-    sleep 0.2
-    echo "  + .claude/CLAUDE.md (new)"
+    echo "  + .claude/skills/tdd.md"
+    sleep 0.15
+    echo "  + .claude/skills/code-review.md"
+    sleep 0.15
+    echo "  + .claude/CLAUDE.md"
     sleep 0.2
     echo "  Installing plugin: superpowers@claude-plugins-official"
     sleep 0.3
     echo "  ✔ Plugin installed"
-    sleep 0.2
-    echo "? Team passphrase (leave empty if sessions are not encrypted): ●●●●●●●●●●●●●●"
-    sleep 0.8
+    sleep 0.3
+    echo "✔ Team passphrase (leave empty if sessions are not encrypted): ●●●●●●●●●●●●●●"
+    sleep 0.6
     echo "  + 4 sessions installed"
     sleep 0.2
     echo ""
@@ -79,15 +95,14 @@ case "$CMD" in
         echo "  Generated cortex.json (1 plugins)"
         sleep 0.4
         echo ""
-        echo "⚠  Compartir sesiones de chat"
-        echo "   Tus sesiones de Claude Code para este proyecto se subirían"
-        echo "   al repo de equipo y serían visibles por todos los miembros."
+        echo "⚠  Share chat sessions with the team?"
+        echo "   Your Claude Code sessions will be visible to all team members."
         sleep 0.8
-        echo "✔ ¿Compartir sesiones con el equipo? Yes"
+        echo "✔ Share sessions with the team? Yes"
         sleep 0.4
-        echo "✔ ¿Encriptar las sesiones? Sí — encriptadas con passphrase del equipo (recomendado)"
+        echo "✔ Encrypt sessions? Yes — AES-256-GCM (recommended)"
         sleep 0.4
-        echo "✔ Team passphrase (shared with all devs, min 12 chars): ●●●●●●●●●●●●●●"
+        echo "✔ Team passphrase (min 12 chars): ●●●●●●●●●●●●●●"
         sleep 0.8
         echo "  Uploaded 4 sessions"
         sleep 0.3
@@ -124,7 +139,7 @@ case "$CMD" in
     esac
     ;;
   --version)
-    echo "0.4.9"
+    echo "0.4.16"
     ;;
   *)
     echo "cortex — sync Claude Code sessions between machines"

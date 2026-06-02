@@ -22,7 +22,7 @@ Sleep 400ms
 Type "cortex sync"
 Sleep 500ms
 Enter
-Sleep 3s
+Sleep 5s
 
 Sleep 1.5s
 Type "clear"
@@ -36,7 +36,7 @@ Sleep 400ms
 Type "cortex pull"
 Sleep 500ms
 Enter
-Sleep 3.5s
+Sleep 5s
 
 Sleep 1.5s
 Type "clear"
