@@ -142,6 +142,9 @@ export async function pullCommand(opts: PullOptions = {}): Promise<PullResult> {
     if (mappingsDirty) await saveMappings(mappings);
   }
 
+  // Start with a copy of the remote manifest; update entries as files are remapped/renamed.
+  const localManifest: Manifest = { ...remote, files: { ...remote.files } };
+
   async function* gen() {
     let downloaded = 0;
     for (const path of toPull) {
@@ -178,6 +181,17 @@ export async function pullCommand(opts: PullOptions = {}): Promise<PullResult> {
           relativePath = `projects/${newEncodedDir}/${m[3]}`;
         }
 
+        // Update the local manifest to reflect the actual on-disk path and checksum.
+        // This prevents remapped files from showing as "modified" on the next sync.
+        if (relativePath !== path) {
+          delete localManifest.files[path];
+        }
+        localManifest.files[relativePath] = {
+          ...remote.files[path],
+          checksum: checksumSha256(remappedContent),
+          size: remappedContent.length,
+        };
+
         downloaded++;
         process.stdout.write(`\r  Downloading… ${downloaded}/${toPull.length} files`);
         yield { relativePath, content: remappedContent };
@@ -192,7 +206,7 @@ export async function pullCommand(opts: PullOptions = {}): Promise<PullResult> {
 
   await adapter.putFiles(gen());
 
-  await saveManifest(MANIFEST_PATH, remote);
+  await saveManifest(MANIFEST_PATH, localManifest);
   console.log(`\n✓ Pull complete — ${toPull.length} files restored.`);
   return {
     filesRestored: toPull.length,

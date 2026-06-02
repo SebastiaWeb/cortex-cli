@@ -133,4 +133,28 @@ describe('remapJsonlBuffer', () => {
     const parsed = JSON.parse(lines[1]) as { cwd: string };
     expect(parsed.cwd).toBe(NEW_PATH);
   });
+
+  it('passes through a JSON string line byte-for-byte', () => {
+    // Claude Code control lines can emit non-object JSON; we must not throw or mangle them.
+    const input = Buffer.from('"just a control string"\n{"cwd":"/home/machineA/projects/myapp"}\n');
+    const out = remapJsonlBuffer(input, OLD_PATH, NEW_PATH);
+    const lines = out.toString('utf-8').split('\n').filter(Boolean);
+    expect(lines[0]).toBe('"just a control string"');
+    expect(JSON.parse(lines[1] as string) as { cwd: string }).toMatchObject({ cwd: NEW_PATH });
+  });
+
+  it('passes through a JSON array line byte-for-byte', () => {
+    const input = Buffer.from('[1,2,3]\n{"cwd":"/home/machineA/projects/myapp"}\n');
+    const out = remapJsonlBuffer(input, OLD_PATH, NEW_PATH);
+    const lines = out.toString('utf-8').split('\n').filter(Boolean);
+    expect(lines[0]).toBe('[1,2,3]');
+  });
+
+  it('passes through a JSON null line byte-for-byte', () => {
+    const input = Buffer.from('null\n{"cwd":"/home/machineA/projects/myapp"}\n');
+    const out = remapJsonlBuffer(input, OLD_PATH, NEW_PATH);
+    const lines = out.toString('utf-8').split('\n').filter(Boolean);
+    expect(lines[0]).toBe('null');
+  });
 });
+

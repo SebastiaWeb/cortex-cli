@@ -16,22 +16,31 @@ function remapPath(value: unknown, oldPrefix: string, newPrefix: string): unknow
   return value;
 }
 
-function remapLine(parsed: Record<string, unknown>, oldPath: string, newPath: string): void {
+function remapLine(parsed: Record<string, unknown>, oldPath: string, newPath: string): boolean {
+  let changed = false;
+
   // cwd (top-level)
   if ('cwd' in parsed) {
-    parsed['cwd'] = remapPath(parsed['cwd'], oldPath, newPath);
+    const next = remapPath(parsed['cwd'], oldPath, newPath);
+    if (next !== parsed['cwd']) { parsed['cwd'] = next; changed = true; }
   }
 
   // toolUseResult.filePath
   const tur = parsed['toolUseResult'];
   if (tur !== null && typeof tur === 'object') {
     const r = tur as Record<string, unknown>;
-    if ('filePath' in r) r['filePath'] = remapPath(r['filePath'], oldPath, newPath);
+    if ('filePath' in r) {
+      const next = remapPath(r['filePath'], oldPath, newPath);
+      if (next !== r['filePath']) { r['filePath'] = next; changed = true; }
+    }
     // toolUseResult.file.filePath
     const f = r['file'];
     if (f !== null && typeof f === 'object') {
       const ff = f as Record<string, unknown>;
-      if ('filePath' in ff) ff['filePath'] = remapPath(ff['filePath'], oldPath, newPath);
+      if ('filePath' in ff) {
+        const next = remapPath(ff['filePath'], oldPath, newPath);
+        if (next !== ff['filePath']) { ff['filePath'] = next; changed = true; }
+      }
     }
   }
 
@@ -45,12 +54,15 @@ function remapLine(parsed: Record<string, unknown>, oldPath: string, newPath: st
         if (input !== null && typeof input === 'object') {
           const inp = input as Record<string, unknown>;
           if ('file_path' in inp) {
-            inp['file_path'] = remapPath(inp['file_path'], oldPath, newPath);
+            const next = remapPath(inp['file_path'], oldPath, newPath);
+            if (next !== inp['file_path']) { inp['file_path'] = next; changed = true; }
           }
         }
       }
     }
   }
+
+  return changed;
 }
 
 /**
@@ -92,9 +104,18 @@ export function remapJsonlBuffer(
     const lineStr = lineBytes.toString('utf-8').trim();
     if (lineStr.length > 0) {
       try {
-        const parsed = JSON.parse(lineStr) as Record<string, unknown>;
-        remapLine(parsed, oldPath, newPath);
-        parts.push(Buffer.from(JSON.stringify(parsed), 'utf-8'));
+        const raw = JSON.parse(lineStr);
+        // Only remap JSON objects. Strings, numbers, arrays, and null are passed
+        // through unchanged — they cannot contain structural path fields.
+        if (raw !== null && typeof raw === 'object' && !Array.isArray(raw)) {
+          const parsed = raw as Record<string, unknown>;
+          const changed = remapLine(parsed, oldPath, newPath);
+          // Only re-serialize when a path actually changed; otherwise preserve the
+          // original bytes so checksums remain stable for unmodified lines.
+          parts.push(changed ? Buffer.from(JSON.stringify(parsed), 'utf-8') : lineBytes);
+        } else {
+          parts.push(lineBytes);
+        }
       } catch {
         // Not valid JSON — pass through as-is
         parts.push(lineBytes);

@@ -19,7 +19,7 @@ export async function teamPushCommand(): Promise<void> {
   if (!(await hasLocalClone())) throw new Error('No local team clone found. Run "cortex team init" first.');
 
   console.log('Pulling latest from team repo…');
-  pullTeamRepo();
+  pullTeamRepo(repoUrl, token);
 
   const skills = await readSkillsFromDir(LOCAL_SKILLS_DIR);
   if (skills.size > 0) {

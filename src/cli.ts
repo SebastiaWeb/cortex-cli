@@ -32,6 +32,7 @@ program
   .description('Encrypt local files and upload to the configured storage')
   .option('--target <path>', 'Override storage to a local folder (overrides config)')
   .option('--skip-secrets-check', 'Skip the regex scan for API keys before encrypting')
+  .option('--prune', 'Also remove remote files from project dirs absent on this machine (reclaims storage from renamed/deleted projects)')
   .action(syncCommand);
 
 program

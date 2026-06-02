@@ -17,6 +17,13 @@ function isSafeGitHubPath(path: string): boolean {
 export interface SyncOptions {
   target?: string;
   skipSecretsCheck?: boolean;
+  /**
+   * When true, also removes remote files from project directories that no longer
+   * exist on this machine — including sessions left behind by renamed or deleted
+   * projects. Use this to reclaim storage. Without this flag, such files are kept
+   * so other machines' sessions coexist safely in shared storage.
+   */
+  prune?: boolean;
 }
 
 export async function syncCommand(opts: SyncOptions = {}): Promise<void> {
@@ -85,6 +92,13 @@ export async function syncCommand(opts: SyncOptions = {}): Promise<void> {
     `Diff — added: ${diff.added.length}, modified: ${diff.modified.length}, removed: ${diff.removed.length}, unchanged: ${diff.unchanged.length}`,
   );
 
+  // Collect every project-encoded directory present on this machine (for removal guard below).
+  const localProjectDirs = new Set<string>();
+  for (const p of contents.keys()) {
+    const pm = p.match(/^projects\/([^/]+)\//);
+    if (pm) localProjectDirs.add(pm[1]);
+  }
+
   const toUpload = [...diff.added, ...diff.modified];
   let uploaded = 0;
   let skipped = 0;
@@ -106,8 +120,18 @@ export async function syncCommand(opts: SyncOptions = {}): Promise<void> {
   if (skipped > 0) {
     console.warn(`  ⚠ Skipped ${skipped} file(s) with paths incompatible with GitHub (control chars, .git, etc.)`);
   }
+  let pruned = 0;
   for (const path of diff.removed) {
+    // Without --prune, skip files from project directories absent on this machine.
+    // Those may belong to other machines or to a project that was renamed locally.
+    // With --prune, remove everything that's no longer on this machine (opt-in cleanup).
+    const pm = path.match(/^projects\/([^/]+)\//);
+    if (!opts.prune && pm && !localProjectDirs.has(pm[1])) continue;
     await backend.remove('files/' + path);
+    pruned++;
+  }
+  if (opts.prune && pruned > 0) {
+    console.log(`  Pruned ${pruned} remote file(s) from absent project directories.`);
   }
   for (const path of diff.unchanged) {
     local.files[path].encryptedSize = remote.files[path].encryptedSize;
