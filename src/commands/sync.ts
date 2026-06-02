@@ -29,7 +29,7 @@ export async function syncCommand(opts: SyncOptions = {}): Promise<void> {
 
   console.log(`Sync target: ${backend.name}${opts.target ? ` (${opts.target})` : ''}\n`);
 
-  console.log('Reading local files…');
+  process.stdout.write('Reading local files…');
   const local: Manifest = emptyManifest('claude-code');
   const contents = new Map<string, Buffer>();
   for await (const f of adapter.getFiles()) {
@@ -39,8 +39,9 @@ export async function syncCommand(opts: SyncOptions = {}): Promise<void> {
       size: f.content.length,
       encryptedSize: 0,
     };
+    process.stdout.write(`\r  Reading… ${contents.size} files`);
   }
-  console.log(`  ${contents.size} files`);
+  process.stdout.write(`\r  ${contents.size} files read${' '.repeat(20)}\n`);
 
   // Build project metadata for path remapping on the destination machine.
   local.projects = {};

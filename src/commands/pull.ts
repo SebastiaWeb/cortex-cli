@@ -143,6 +143,7 @@ export async function pullCommand(opts: PullOptions = {}): Promise<PullResult> {
   }
 
   async function* gen() {
+    let downloaded = 0;
     for (const path of toPull) {
       const blob = await backend.read('files/' + path);
       const content = decrypt(blob, derived);
@@ -177,11 +178,16 @@ export async function pullCommand(opts: PullOptions = {}): Promise<PullResult> {
           relativePath = `projects/${newEncodedDir}/${m[3]}`;
         }
 
+        downloaded++;
+        process.stdout.write(`\r  Downloading… ${downloaded}/${toPull.length} files`);
         yield { relativePath, content: remappedContent };
       } else {
+        downloaded++;
+        process.stdout.write(`\r  Downloading… ${downloaded}/${toPull.length} files`);
         yield { relativePath: path, content };
       }
     }
+    if (toPull.length > 0) process.stdout.write('\n');
   }
 
   await adapter.putFiles(gen());
