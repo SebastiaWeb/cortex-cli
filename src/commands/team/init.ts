@@ -1,12 +1,13 @@
-import { input, confirm, select, password } from '@inquirer/prompts';
+import { input, confirm, select, password, checkbox } from '@inquirer/prompts';
 import { writeFile, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { loadConfig } from '../../lib/config.js';
 import { cloneTeamRepo, commitAndPush, TEAM_DIR } from '../../lib/team-repo.js';
-import { readSkillsFromDir, readFileFromPath, LOCAL_SKILLS_DIR, LOCAL_CLAUDE_MD } from '../../lib/claude-skills.js';
+import {
+  readSkillsFromDir, findClaudeMd, findExtraMdFiles, LOCAL_SKILLS_DIR,
+} from '../../lib/claude-skills.js';
 import { getInstalledPluginIds } from '../../lib/claude-plugins.js';
 import { writeProjectConfig } from '../../lib/project-config.js';
-import { identifyProject } from '../../lib/project-identifier.js';
 import { deriveKey } from '../../lib/crypto.js';
 import { pushSessions } from '../../lib/team-sessions.js';
 
@@ -33,10 +34,28 @@ export async function teamInitCommand(opts: { repo?: string }): Promise<void> {
     console.log(`  Copied ${skills.size} skills from .claude/skills/`);
   }
 
-  const claudeMd = await readFileFromPath(LOCAL_CLAUDE_MD);
+  const claudeMd = await findClaudeMd();
   if (claudeMd) {
-    await writeFile(join(TEAM_DIR, 'CLAUDE.md'), claudeMd, 'utf-8');
-    console.log('  Copied .claude/CLAUDE.md');
+    await writeFile(join(TEAM_DIR, 'CLAUDE.md'), claudeMd.content, 'utf-8');
+    console.log(`  Copied CLAUDE.md (from ${claudeMd.foundAt})`);
+  }
+
+  // Offer to include other .md files found in the project
+  const extras = await findExtraMdFiles();
+  if (extras.length > 0) {
+    const chosen = await checkbox<string>({
+      message: `Found ${extras.length} additional .md file(s) — select ones to share with the team:`,
+      choices: extras.map(f => ({ name: f.relPath, value: f.relPath })),
+    });
+    if (chosen.length > 0) {
+      for (const relPath of chosen) {
+        const file = extras.find(f => f.relPath === relPath)!;
+        const destPath = join(TEAM_DIR, 'docs', relPath);
+        await mkdir(dirname(destPath), { recursive: true });
+        await writeFile(destPath, file.content, 'utf-8');
+        console.log(`  Copied docs/${relPath}`);
+      }
+    }
   }
 
   const plugins = await getInstalledPluginIds();

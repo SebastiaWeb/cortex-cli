@@ -1,11 +1,11 @@
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
 import { password } from '@inquirer/prompts';
 import { loadConfig } from '../../lib/config.js';
 import { pullTeamRepo, TEAM_DIR, hasLocalClone } from '../../lib/team-repo.js';
 import {
   readSkillsFromDir, writeSkillToDir, readFileFromPath, writeFileToPath,
-  LOCAL_SKILLS_DIR, LOCAL_CLAUDE_MD, injectCortexPathBlock,
+  readExtraDocsFromDir, LOCAL_SKILLS_DIR, LOCAL_CLAUDE_MD, injectCortexPathBlock,
 } from '../../lib/claude-skills.js';
 import { installPlugin } from '../../lib/claude-plugins.js';
 import { hasConflict, promptConflict, mergeContent } from '../../lib/conflict.js';
@@ -64,6 +64,15 @@ export async function teamPullCommand(): Promise<void> {
         console.log('  ~ CLAUDE.md skipped');
       }
     }
+  }
+
+  // Extra .md docs shared by the team (stored under docs/ in the team repo)
+  const extraDocs = await readExtraDocsFromDir(join(TEAM_DIR, 'docs'));
+  for (const [relPath, content] of extraDocs) {
+    const destPath = join(process.cwd(), relPath);
+    await mkdir(dirname(destPath), { recursive: true });
+    await writeFile(destPath, content, 'utf-8');
+    console.log(`  + ${relPath}`);
   }
 
   let cortexManifest: { plugins?: string[] } = {};

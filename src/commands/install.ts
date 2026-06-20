@@ -1,11 +1,11 @@
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
 import { password } from '@inquirer/prompts';
 import { loadConfig } from '../lib/config.js';
 import { cloneTeamRepo, TEAM_DIR } from '../lib/team-repo.js';
 import {
   readSkillsFromDir, writeSkillToDir, readFileFromPath, writeFileToPath,
-  LOCAL_SKILLS_DIR, LOCAL_CLAUDE_MD, injectCortexPathBlock,
+  readExtraDocsFromDir, LOCAL_SKILLS_DIR, LOCAL_CLAUDE_MD, injectCortexPathBlock,
 } from '../lib/claude-skills.js';
 import { installPlugin } from '../lib/claude-plugins.js';
 import { readProjectConfig, writeProjectConfig } from '../lib/project-config.js';
@@ -42,6 +42,15 @@ export async function installCommand(opts: { repo?: string }): Promise<void> {
   // If the team has no CLAUDE.md, the block alone is sufficient for path resolution.
   await writeFileToPath(LOCAL_CLAUDE_MD, injectCortexPathBlock(teamMd, process.cwd()));
   if (teamMd) console.log('  + .claude/CLAUDE.md');
+
+  // Extra .md docs shared by the team (stored under docs/ in the team repo)
+  const extraDocs = await readExtraDocsFromDir(join(TEAM_DIR, 'docs'));
+  for (const [relPath, content] of extraDocs) {
+    const destPath = join(process.cwd(), relPath);
+    await mkdir(dirname(destPath), { recursive: true });
+    await writeFile(destPath, content, 'utf-8');
+    console.log(`  + ${relPath}`);
+  }
 
   let cortexJson: { plugins?: string[] } = {};
   try {

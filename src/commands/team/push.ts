@@ -1,12 +1,13 @@
 import { writeFile, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
-import { password } from '@inquirer/prompts';
+import { join, dirname } from 'node:path';
+import { checkbox, password } from '@inquirer/prompts';
 import { loadConfig } from '../../lib/config.js';
 import { pullTeamRepo, commitAndPush, TEAM_DIR, hasLocalClone } from '../../lib/team-repo.js';
-import { readSkillsFromDir, readFileFromPath, LOCAL_SKILLS_DIR, LOCAL_CLAUDE_MD } from '../../lib/claude-skills.js';
+import {
+  readSkillsFromDir, findClaudeMd, findExtraMdFiles, LOCAL_SKILLS_DIR,
+} from '../../lib/claude-skills.js';
 import { getInstalledPluginIds } from '../../lib/claude-plugins.js';
-import { readProjectConfig, writeProjectConfig } from '../../lib/project-config.js';
-import { identifyProject } from '../../lib/project-identifier.js';
+import { readProjectConfig } from '../../lib/project-config.js';
 import { deriveKey } from '../../lib/crypto.js';
 import { pushSessions } from '../../lib/team-sessions.js';
 
@@ -29,9 +30,26 @@ export async function teamPushCommand(): Promise<void> {
     }
   }
 
-  const claudeMd = await readFileFromPath(LOCAL_CLAUDE_MD);
+  const claudeMd = await findClaudeMd();
   if (claudeMd) {
-    await writeFile(join(TEAM_DIR, 'CLAUDE.md'), claudeMd, 'utf-8');
+    await writeFile(join(TEAM_DIR, 'CLAUDE.md'), claudeMd.content, 'utf-8');
+    console.log(`  CLAUDE.md (from ${claudeMd.foundAt})`);
+  }
+
+  // Offer to include other .md files found in the project
+  const extras = await findExtraMdFiles();
+  if (extras.length > 0) {
+    const chosen = await checkbox<string>({
+      message: `Found ${extras.length} additional .md file(s) — select ones to share with the team:`,
+      choices: extras.map(f => ({ name: f.relPath, value: f.relPath })),
+    });
+    for (const relPath of chosen) {
+      const file = extras.find(f => f.relPath === relPath)!;
+      const destPath = join(TEAM_DIR, 'docs', relPath);
+      await mkdir(dirname(destPath), { recursive: true });
+      await writeFile(destPath, file.content, 'utf-8');
+      console.log(`  docs/${relPath}`);
+    }
   }
 
   const plugins = await getInstalledPluginIds();
