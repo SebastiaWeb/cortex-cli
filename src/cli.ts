@@ -2,6 +2,7 @@ import { createRequire } from 'node:module';
 import { Command } from 'commander';
 import { convertCommand, type ConvertTarget } from './commands/convert.js';
 import { initCommand } from './commands/init.js';
+import { setTokenCommand } from './commands/set-token.js';
 import { mcpCommand } from './commands/mcp.js';
 import { setupMcpCommand } from './commands/setup-mcp.js';
 import { pullCommand } from './commands/pull.js';
@@ -26,6 +27,11 @@ program
   .command('init')
   .description('Configure Cortex: pick storage, set passphrase, detect tools')
   .action(initCommand);
+
+program
+  .command('set-token <token>')
+  .description('Update your GitHub PAT without reconfiguring everything else')
+  .action((token: string) => void setTokenCommand(token));
 
 program
   .command('sync')

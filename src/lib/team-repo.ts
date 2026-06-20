@@ -11,6 +11,22 @@ export function authUrl(repoUrl: string, token: string): string {
   return repoUrl.replace('https://', `https://${token}@`);
 }
 
+function isAuthError(stderr: string): boolean {
+  return /authentication failed|could not read (username|password)|403|bad credentials|invalid username/i.test(stderr);
+}
+
+function throwGitError(op: string, stderr: string): never {
+  if (isAuthError(stderr)) {
+    throw new Error(
+      `GitHub authentication failed during git ${op}.\n` +
+      `Your token may be expired or revoked.\n` +
+      `Update it with: cortex set-token <new-token>\n` +
+      `(Create a new PAT at: https://github.com/settings/tokens/new?scopes=repo)`,
+    );
+  }
+  throw new Error(`git ${op} failed: ${stderr}`);
+}
+
 /**
  * Runs `fn` with a GIT_ASKPASS env that serves `token` as the credential.
  * The token lives only in a temp script file (mode 700, deleted in finally).
@@ -54,9 +70,7 @@ export async function cloneTeamRepo(repoUrl: string, token: string, dir: string 
   await mkdir(CORTEX_DIR, { recursive: true });
   withAskpass(token, (env) => {
     const result = spawnSync('git', ['clone', repoUrl, dir], { stdio: 'pipe', env });
-    if (result.status !== 0) {
-      throw new Error(`git clone failed: ${result.stderr?.toString().trim()}`);
-    }
+    if (result.status !== 0) throwGitError('clone', result.stderr?.toString().trim() ?? '');
   });
 }
 
@@ -68,9 +82,7 @@ export function configureGitUser(dir: string = TEAM_DIR): void {
 export function pullTeamRepo(repoUrl: string, token: string, dir: string = TEAM_DIR): void {
   withAskpass(token, (env) => {
     const result = spawnSync('git', ['-C', dir, 'pull', '--ff-only', repoUrl], { stdio: 'pipe', env });
-    if (result.status !== 0) {
-      throw new Error(`git pull failed: ${result.stderr?.toString().trim()}`);
-    }
+    if (result.status !== 0) throwGitError('pull', result.stderr?.toString().trim() ?? '');
   });
 }
 
@@ -90,8 +102,6 @@ export function commitAndPush(repoUrl: string, token: string, message: string, d
   if (commit.status !== 0) throw new Error('git commit failed');
   withAskpass(token, (env) => {
     const push = spawnSync('git', ['-C', dir, 'push', repoUrl], { stdio: 'pipe', env });
-    if (push.status !== 0) {
-      throw new Error(`git push failed: ${push.stderr?.toString().trim()}`);
-    }
+    if (push.status !== 0) throwGitError('push', push.stderr?.toString().trim() ?? '');
   });
 }
