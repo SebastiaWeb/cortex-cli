@@ -1,6 +1,6 @@
 {
   "name": "cortex-sync",
-  "version": "0.4.16",
+  "version": "0.4.17",
   "description": "Sync Claude Code sessions between machines with automatic path remapping and skill conversion",
   "license": "AGPL-3.0",
   "type": "module",
