@@ -34,6 +34,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
+    "prepublishOnly": "npm run build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "postinstall": "node scripts/postinstall.cjs"
