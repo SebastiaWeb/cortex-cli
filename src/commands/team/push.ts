@@ -4,7 +4,7 @@ import { checkbox, password } from '@inquirer/prompts';
 import { loadConfig } from '../../lib/config.js';
 import { pullTeamRepo, commitAndPush, TEAM_DIR, hasLocalClone } from '../../lib/team-repo.js';
 import {
-  readSkillsFromDir, findClaudeMd, findExtraMdFiles, LOCAL_SKILLS_DIR,
+  readSkillsFromDir, findClaudeMd, findExtraMdFiles, stripCortexPathBlock, LOCAL_SKILLS_DIR,
 } from '../../lib/claude-skills.js';
 import { getInstalledPluginIds } from '../../lib/claude-plugins.js';
 import { readProjectConfig } from '../../lib/project-config.js';
@@ -32,7 +32,7 @@ export async function teamPushCommand(): Promise<void> {
 
   const claudeMd = await findClaudeMd();
   if (claudeMd) {
-    await writeFile(join(TEAM_DIR, 'CLAUDE.md'), claudeMd.content, 'utf-8');
+    await writeFile(join(TEAM_DIR, 'CLAUDE.md'), stripCortexPathBlock(claudeMd.content), 'utf-8');
     console.log(`  CLAUDE.md (from ${claudeMd.foundAt})`);
   }
 

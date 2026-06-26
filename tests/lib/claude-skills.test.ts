@@ -8,6 +8,7 @@ import {
   readFileFromPath,
   writeFileToPath,
   injectCortexPathBlock,
+  stripCortexPathBlock,
 } from '../../src/lib/claude-skills.js';
 
 describe('claude-skills', () => {
@@ -98,5 +99,37 @@ describe('injectCortexPathBlock', () => {
   it('block is always at the very start of the output', () => {
     const result = injectCortexPathBlock('# Existing content', '/home/alice/project');
     expect(result.startsWith(CORTEX_START)).toBe(true);
+  });
+});
+
+describe('stripCortexPathBlock', () => {
+  it('removes the injected block, returning the original content', () => {
+    const original = '# My Project\n\nSome content here.';
+    const injected = injectCortexPathBlock(original, '/home/alice/project');
+    expect(stripCortexPathBlock(injected)).toBe(original);
+  });
+
+  it('returns content unchanged when no block present', () => {
+    const content = '# Clean file\n\nNo block here.';
+    expect(stripCortexPathBlock(content)).toBe(content);
+  });
+
+  it('returns empty string when content is only the block', () => {
+    const onlyBlock = injectCortexPathBlock('', '/home/alice/project');
+    expect(stripCortexPathBlock(onlyBlock)).toBe('');
+  });
+
+  it('inject then strip is a round-trip (no content loss)', () => {
+    const original = '# CLAUDE.md\n\n- Always write tests\n- Keep it simple\n';
+    const roundTrip = stripCortexPathBlock(injectCortexPathBlock(original, '/some/path'));
+    expect(roundTrip).toBe(original);
+  });
+
+  it('handles block injected with spaces in path', () => {
+    const original = '# Docs';
+    const injected = injectCortexPathBlock(original, '/Users/dev/Desktop/My Project/app');
+    const stripped = stripCortexPathBlock(injected);
+    expect(stripped).toBe(original);
+    expect(stripped).not.toContain('cortex-sync');
   });
 });

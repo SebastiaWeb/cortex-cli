@@ -143,8 +143,26 @@ export async function writeFileToPath(filePath: string, content: string): Promis
   await writeFile(filePath, content, 'utf-8');
 }
 
-const CORTEX_BLOCK_START = '<!-- cortex-sync:start -->';
-const CORTEX_BLOCK_END = '<!-- cortex-sync:end -->';
+export const CORTEX_BLOCK_START = '<!-- cortex-sync:start -->';
+export const CORTEX_BLOCK_END = '<!-- cortex-sync:end -->';
+
+/**
+ * Removes the cortex-sync path block from CLAUDE.md before pushing to the
+ * team repo. The block is machine-specific and must never live in the remote.
+ */
+export function stripCortexPathBlock(content: string): string {
+  const startIdx = content.indexOf(CORTEX_BLOCK_START);
+  const endIdx = content.indexOf(CORTEX_BLOCK_END);
+  if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) return content;
+
+  const before = content.slice(0, startIdx).trimEnd();
+  const after = content.slice(endIdx + CORTEX_BLOCK_END.length).trimStart();
+
+  if (!before && !after) return '';
+  if (!before) return after;
+  if (!after) return before + '\n';
+  return before + '\n\n' + after;
+}
 
 export function injectCortexPathBlock(content: string, cwd: string): string {
   const block = [

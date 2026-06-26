@@ -4,7 +4,7 @@ import { join, dirname } from 'node:path';
 import { loadConfig } from '../../lib/config.js';
 import { cloneTeamRepo, commitAndPush, TEAM_DIR } from '../../lib/team-repo.js';
 import {
-  readSkillsFromDir, findClaudeMd, findExtraMdFiles, LOCAL_SKILLS_DIR,
+  readSkillsFromDir, findClaudeMd, findExtraMdFiles, stripCortexPathBlock, LOCAL_SKILLS_DIR,
 } from '../../lib/claude-skills.js';
 import { getInstalledPluginIds } from '../../lib/claude-plugins.js';
 import { writeProjectConfig } from '../../lib/project-config.js';
@@ -36,7 +36,7 @@ export async function teamInitCommand(opts: { repo?: string }): Promise<void> {
 
   const claudeMd = await findClaudeMd();
   if (claudeMd) {
-    await writeFile(join(TEAM_DIR, 'CLAUDE.md'), claudeMd.content, 'utf-8');
+    await writeFile(join(TEAM_DIR, 'CLAUDE.md'), stripCortexPathBlock(claudeMd.content), 'utf-8');
     console.log(`  Copied CLAUDE.md (from ${claudeMd.foundAt})`);
   }
 
