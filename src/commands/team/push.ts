@@ -7,13 +7,13 @@ import {
   readSkillsFromDir, findClaudeMd, findExtraMdFiles, stripCortexPathBlock, LOCAL_SKILLS_DIR,
 } from '../../lib/claude-skills.js';
 import { getInstalledPluginIds } from '../../lib/claude-plugins.js';
-import { readProjectConfig } from '../../lib/project-config.js';
+import { readProjectConfig, writeProjectConfig } from '../../lib/project-config.js';
 import { deriveKey } from '../../lib/crypto.js';
 import { pushSessions } from '../../lib/team-sessions.js';
 
 export async function teamPushCommand(): Promise<void> {
   const config = await loadConfig();
-  const { repo: repoUrl, shareSession, encryptSessions } = await readProjectConfig();
+  const { repo: repoUrl, shareSession, encryptSessions, extraDocs: approvedDocs = [] } = await readProjectConfig();
   const token = config.githubToken;
   if (!repoUrl) throw new Error('No team repo configured. Run "cortex team init --repo <url>" first.');
   if (!token) throw new Error('No GitHub token found. Run "cortex init" first.');
@@ -36,22 +36,38 @@ export async function teamPushCommand(): Promise<void> {
     console.log(`  CLAUDE.md (from ${claudeMd.foundAt})`);
   }
 
-  // Offer to include other .md files found in the project
+  // Push extra .md files — silently update already-approved ones, ask only about new ones
   const extras = await findExtraMdFiles();
   if (extras.length > 0) {
-    console.log(`\nFound ${extras.length} additional .md file(s):`);
-    for (const f of extras) console.log(`  ${f.relPath}`);
-    const includeAll = await confirm({
-      message: 'Include these files with team context?',
-      default: true,
-    });
-    if (includeAll) {
-      for (const { relPath, content } of extras) {
-        const destPath = join(TEAM_DIR, 'docs', relPath);
-        await mkdir(dirname(destPath), { recursive: true });
-        await writeFile(destPath, content, 'utf-8');
+    const approvedSet = new Set(approvedDocs);
+    const alreadyApproved = extras.filter((f) => approvedSet.has(f.relPath));
+    const newFiles = extras.filter((f) => !approvedSet.has(f.relPath));
+
+    // Silently update already-approved files
+    for (const { relPath, content } of alreadyApproved) {
+      const destPath = join(TEAM_DIR, 'docs', relPath);
+      await mkdir(dirname(destPath), { recursive: true });
+      await writeFile(destPath, content, 'utf-8');
+    }
+
+    // Ask only about new files not yet approved
+    if (newFiles.length > 0) {
+      console.log(`\nFound ${newFiles.length} new .md file(s):`);
+      for (const f of newFiles) console.log(`  ${f.relPath}`);
+      const includeNew = await confirm({
+        message: 'Include these files with team context?',
+        default: true,
+      });
+      if (includeNew) {
+        for (const { relPath, content } of newFiles) {
+          const destPath = join(TEAM_DIR, 'docs', relPath);
+          await mkdir(dirname(destPath), { recursive: true });
+          await writeFile(destPath, content, 'utf-8');
+        }
+        const updatedApproved = [...approvedSet, ...newFiles.map((f) => f.relPath)];
+        await writeProjectConfig({ extraDocs: updatedApproved });
+        console.log(`  Added ${newFiles.length} file(s) to docs/`);
       }
-      console.log(`  Added ${extras.length} file(s) to docs/`);
     }
   }
 
