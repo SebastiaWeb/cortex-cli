@@ -3,7 +3,7 @@
 **Share Claude Code context with your team. Sync your sessions between machines.**
 
 ```bash
-npm install -g cortex-sync
+npm install -g cortex-sync@latest
 ```
 
 Works on **Linux**, **macOS**, and **Windows**.

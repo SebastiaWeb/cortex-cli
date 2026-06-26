@@ -23,7 +23,8 @@ const { homedir, platform } = require('os');
 if (platform() === 'win32') {
   // The official Node.js installer and nvm-windows both add the global bin to
   // the system PATH automatically. Nothing to do.
-  console.log('\n  ✓ cortex installed. Run: cortex --version\n');
+  console.log('\n  ✓ cortex installed. Run: cortex --version');
+  console.log('  To update later: npm install -g cortex-sync@latest\n');
   process.exit(0);
 }
 
@@ -59,7 +60,8 @@ try {
       const dest = join(dir, 'cortex');
       if (existsSync(dest)) unlinkSync(dest);
       symlinkSync(cortexBin, dest);
-      console.log('\n  ✓ cortex installed. Run: cortex --version\n');
+      console.log('\n  ✓ cortex installed. Run: cortex --version');
+      console.log('  To update later: npm install -g cortex-sync@latest\n');
       process.exit(0);
     } catch { /* no write permission — try next candidate */ }
   }
@@ -98,11 +100,13 @@ try {
 
   if (patched) {
     console.log('\n  ✓ cortex installed.');
-    console.log('  Open a new terminal (or run: source ~/.zshrc) to use it.\n');
+    console.log('  Open a new terminal (or run: source ~/.zshrc) to use it.');
+    console.log('  To update later: npm install -g cortex-sync@latest\n');
   } else {
     console.log(`\n  ✓ cortex installed to: ${cortexBin}`);
     console.log(`  If "cortex" is not found, add to your shell config:`);
-    console.log(`    export PATH="${binDir}:$PATH"\n`);
+    console.log(`    export PATH="${binDir}:$PATH"`);
+    console.log('  To update later: npm install -g cortex-sync@latest\n');
   }
 } catch {
   // Never break the install process
