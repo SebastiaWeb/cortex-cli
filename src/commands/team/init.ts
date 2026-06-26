@@ -42,6 +42,7 @@ export async function teamInitCommand(opts: { repo?: string }): Promise<void> {
 
   // Offer to include other .md files found in the project
   const extras = await findExtraMdFiles();
+  let approvedExtraDocs: string[] = [];
   if (extras.length > 0) {
     console.log(`\nFound ${extras.length} additional .md file(s):`);
     for (const f of extras) console.log(`  ${f.relPath}`);
@@ -55,6 +56,7 @@ export async function teamInitCommand(opts: { repo?: string }): Promise<void> {
         await mkdir(dirname(destPath), { recursive: true });
         await writeFile(destPath, content, 'utf-8');
       }
+      approvedExtraDocs = extras.map((f) => f.relPath);
       console.log(`  Added ${extras.length} file(s) to docs/`);
     }
   }
@@ -105,7 +107,7 @@ export async function teamInitCommand(opts: { repo?: string }): Promise<void> {
     }
   }
 
-  await writeProjectConfig({ repo: repoUrl, shareSession, encryptSessions });
+  await writeProjectConfig({ repo: repoUrl, shareSession, encryptSessions, extraDocs: approvedExtraDocs });
 
   console.log('\n✓ Team repo initialized and pushed.');
   console.log(`  Devs can now run: cortex install --repo ${repoUrl}`);

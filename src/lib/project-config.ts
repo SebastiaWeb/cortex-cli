@@ -5,6 +5,7 @@ export interface ProjectCortexConfig {
   repo?: string;
   shareSession?: boolean;
   encryptSessions?: boolean;
+  extraDocs?: string[];
   [key: string]: unknown;
 }
 
