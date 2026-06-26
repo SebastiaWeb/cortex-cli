@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "cortex": {
+      "type": "stdio",
+      "command": "cortex",
+      "args": ["mcp"],
+      "env": {
+        "CORTEX_PASSPHRASE": "${CORTEX_PASSPHRASE}",
+        "CORTEX_GITHUB_TOKEN": "${CORTEX_GITHUB_TOKEN}"
+      }
+    }
+  }
+}

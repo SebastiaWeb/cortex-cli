@@ -1,0 +1,13 @@
+{
+  "name": "cortex-sync",
+  "description": "Share Claude Code context with your team. Sync sessions between machines with automatic path remapping.",
+  "version": "0.4.23",
+  "author": {
+    "name": "SebastiaWeb",
+    "url": "https://github.com/SebastiaWeb"
+  },
+  "homepage": "https://github.com/SebastiaWeb/cortex-cli",
+  "repository": "https://github.com/SebastiaWeb/cortex-cli",
+  "license": "AGPL-3.0",
+  "keywords": ["sync", "team", "sessions", "skills", "context", "mcp"]
+}
