@@ -1,4 +1,4 @@
-import { input, confirm, select, password, checkbox } from '@inquirer/prompts';
+import { input, confirm, select, password } from '@inquirer/prompts';
 import { writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { loadConfig } from '../../lib/config.js';
@@ -43,18 +43,19 @@ export async function teamInitCommand(opts: { repo?: string }): Promise<void> {
   // Offer to include other .md files found in the project
   const extras = await findExtraMdFiles();
   if (extras.length > 0) {
-    const chosen = await checkbox<string>({
-      message: `Found ${extras.length} additional .md file(s) — select ones to share with the team:`,
-      choices: extras.map(f => ({ name: f.relPath, value: f.relPath })),
+    console.log(`\nFound ${extras.length} additional .md file(s):`);
+    for (const f of extras) console.log(`  ${f.relPath}`);
+    const includeAll = await confirm({
+      message: 'Include these files with team context?',
+      default: true,
     });
-    if (chosen.length > 0) {
-      for (const relPath of chosen) {
-        const file = extras.find(f => f.relPath === relPath)!;
+    if (includeAll) {
+      for (const { relPath, content } of extras) {
         const destPath = join(TEAM_DIR, 'docs', relPath);
         await mkdir(dirname(destPath), { recursive: true });
-        await writeFile(destPath, file.content, 'utf-8');
-        console.log(`  Copied docs/${relPath}`);
+        await writeFile(destPath, content, 'utf-8');
       }
+      console.log(`  Added ${extras.length} file(s) to docs/`);
     }
   }
 
