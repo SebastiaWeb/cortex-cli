@@ -7,8 +7,29 @@ import { CORTEX_DIR } from './config.js';
 
 export const TEAM_DIR = join(CORTEX_DIR, 'team');
 
-export function authUrl(repoUrl: string, token: string): string {
-  return repoUrl.replace('https://', `https://${token}@`);
+/**
+ * repoUrl comes from cortex.json, which is a committed, untrusted file — anyone
+ * whose repo you clone controls its content. Without this check, a repoUrl like
+ * "--upload-pack=<shell command>" is parsed by git as an OPTION (not a URL),
+ * since it's passed to spawnSync as a bare positional argument. git runs the
+ * injected command before failing the clone. Verified against the pre-fix code:
+ *   git clone "--upload-pack=touch /tmp/pwned;true" file:///tmp/bare /tmp/out
+ *   → fatal: could not read from remote repository   (but /tmp/pwned exists)
+ * Requiring the https:// scheme up front is sufficient on its own — the string
+ * can no longer start with "-" — but every call site below also passes `--`
+ * before the URL and disables the ext:: transport, as defense in depth.
+ */
+export function assertSafeRepoUrl(repoUrl: string): void {
+  // file:// is allowed only because this project's own tests clone local bare
+  // repos without a network round-trip; production usage (cortex team init's
+  // prompt, GitHub-created repos) only ever produces https:// URLs.
+  const isHttps = /^https:\/\/[a-zA-Z0-9.-]+(:\d+)?(\/.*)?$/.test(repoUrl);
+  const isFile = /^file:\/\//.test(repoUrl);
+  if (!isHttps && !isFile) {
+    throw new Error(
+      `Invalid repo URL: "${repoUrl}". Must start with https:// — refusing to pass this to git.`,
+    );
+  }
 }
 
 function isAuthError(stderr: string): boolean {
@@ -66,10 +87,15 @@ export async function hasLocalClone(dir: string = TEAM_DIR): Promise<boolean> {
 }
 
 export async function cloneTeamRepo(repoUrl: string, token: string, dir: string = TEAM_DIR): Promise<void> {
+  assertSafeRepoUrl(repoUrl);
   await rm(dir, { recursive: true, force: true });
   await mkdir(CORTEX_DIR, { recursive: true });
   withAskpass(token, (env) => {
-    const result = spawnSync('git', ['clone', repoUrl, dir], { stdio: 'pipe', env });
+    const result = spawnSync(
+      'git',
+      ['-c', 'protocol.ext.allow=never', 'clone', '--', repoUrl, dir],
+      { stdio: 'pipe', env },
+    );
     if (result.status !== 0) throwGitError('clone', result.stderr?.toString().trim() ?? '');
   });
 }
@@ -80,8 +106,13 @@ export function configureGitUser(dir: string = TEAM_DIR): void {
 }
 
 export function pullTeamRepo(repoUrl: string, token: string, dir: string = TEAM_DIR): void {
+  assertSafeRepoUrl(repoUrl);
   withAskpass(token, (env) => {
-    const result = spawnSync('git', ['-C', dir, 'pull', '--ff-only', repoUrl], { stdio: 'pipe', env });
+    const result = spawnSync(
+      'git',
+      ['-C', dir, '-c', 'protocol.ext.allow=never', 'pull', '--ff-only', '--', repoUrl],
+      { stdio: 'pipe', env },
+    );
     if (result.status !== 0) throwGitError('pull', result.stderr?.toString().trim() ?? '');
   });
 }
@@ -92,6 +123,7 @@ export function hasPendingChanges(dir: string = TEAM_DIR): boolean {
 }
 
 export function commitAndPush(repoUrl: string, token: string, message: string, dir: string = TEAM_DIR): void {
+  assertSafeRepoUrl(repoUrl);
   configureGitUser(dir);
   spawnSync('git', ['-C', dir, 'add', '-A'], { stdio: 'pipe' });
   if (!hasPendingChanges(dir)) {
@@ -101,7 +133,11 @@ export function commitAndPush(repoUrl: string, token: string, message: string, d
   const commit = spawnSync('git', ['-C', dir, 'commit', '-m', message], { stdio: 'pipe' });
   if (commit.status !== 0) throw new Error('git commit failed');
   withAskpass(token, (env) => {
-    const push = spawnSync('git', ['-C', dir, 'push', repoUrl], { stdio: 'pipe', env });
+    const push = spawnSync(
+      'git',
+      ['-C', dir, '-c', 'protocol.ext.allow=never', 'push', '--', repoUrl],
+      { stdio: 'pipe', env },
+    );
     if (push.status !== 0) throwGitError('push', push.stderr?.toString().trim() ?? '');
   });
 }

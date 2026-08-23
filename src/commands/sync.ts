@@ -1,12 +1,15 @@
-import { ClaudeCodeAdapter } from '../adapters/claude-code.js';
+import { confirm } from '@inquirer/prompts';
 import { resolveBackend } from '../lib/backend-resolver.js';
-import { MANIFEST_PATH, loadConfig } from '../lib/config.js';
+import { loadConfig } from '../lib/config.js';
 import { checksumSha256, decrypt, deriveKey, encrypt } from '../lib/crypto.js';
 import { diffManifests, emptyManifest, type Manifest, saveManifest } from '../lib/manifest.js';
 import { readPassphrase } from '../lib/passphrase.js';
-import { detectSecrets } from '../lib/secrets-detector.js';
-import { extractCwdFromJsonl } from '../lib/jsonl-remapper.js';
-import { identifyProject } from '../lib/project-identifier.js';
+import { detectSecrets, redactSecrets } from '../lib/secrets-detector.js';
+import { resolveProjectKey } from '../lib/project-identifier.js';
+import { collectProjectFiles } from '../lib/project-content.js';
+import { findExtraMdFiles } from '../lib/claude-skills.js';
+import { readProjectConfig, writeProjectConfig } from '../lib/project-config.js';
+import { remoteManifestPath, remoteFilePath, localManifestPath } from '../lib/project-storage-paths.js';
 
 function isSafeGitHubPath(path: string): boolean {
   return path.split('/').every(
@@ -16,52 +19,71 @@ function isSafeGitHubPath(path: string): boolean {
 
 export interface SyncOptions {
   target?: string;
+  cwd?: string;
   skipSecretsCheck?: boolean;
-  /**
-   * When true, also removes remote files from project directories that no longer
-   * exist on this machine — including sessions left behind by renamed or deleted
-   * projects. Use this to reclaim storage. Without this flag, such files are kept
-   * so other machines' sessions coexist safely in shared storage.
-   */
-  prune?: boolean;
+  redact?: boolean;
 }
 
 export async function syncCommand(opts: SyncOptions = {}): Promise<void> {
+  const cwd = opts.cwd ?? process.cwd();
   const config = await loadConfig();
   const passphrase = await readPassphrase();
   const derived = deriveKey(passphrase, config.email);
 
-  const adapter = new ClaudeCodeAdapter();
+  const { projectId, projectKey } = resolveProjectKey(cwd);
   const backend = resolveBackend(config, { target: opts.target });
 
+  console.log(`Project: ${projectId}`);
   console.log(`Sync target: ${backend.name}${opts.target ? ` (${opts.target})` : ''}\n`);
 
-  process.stdout.write('Reading local files…');
-  const local: Manifest = emptyManifest('claude-code');
-  const contents = new Map<string, Buffer>();
-  for await (const f of adapter.getFiles()) {
-    contents.set(f.relativePath, f.content);
-    local.files[f.relativePath] = {
-      checksum: checksumSha256(f.content),
-      size: f.content.length,
-      encryptedSize: 0,
-    };
-    process.stdout.write(`\r  Reading… ${contents.size} files`);
-  }
-  process.stdout.write(`\r  ${contents.size} files read${' '.repeat(20)}\n`);
+  const contents = await collectProjectFiles(cwd);
 
-  // Build project metadata for path remapping on the destination machine.
-  local.projects = {};
-  const seenDirs = new Set<string>();
+  // Extra .md docs — ask once per file, remember approval in cortex.json (same UX as `cortex team push`).
+  const projectConfig = await readProjectConfig(cwd);
+  const approvedDocs = new Set(projectConfig.extraDocs ?? []);
+  const extras = await findExtraMdFiles(cwd);
+  if (extras.length > 0) {
+    const alreadyApproved = extras.filter((f) => approvedDocs.has(f.relPath));
+    const newFiles = extras.filter((f) => !approvedDocs.has(f.relPath));
+    for (const { relPath, content } of alreadyApproved) {
+      contents.set(`docs/${relPath}`, Buffer.from(content, 'utf-8'));
+    }
+    if (newFiles.length > 0) {
+      console.log(`Found ${newFiles.length} new .md file(s):`);
+      for (const f of newFiles) console.log(`  ${f.relPath}`);
+      const include = await confirm({ message: 'Include these with cortex sync?', default: true });
+      if (include) {
+        for (const { relPath, content } of newFiles) {
+          contents.set(`docs/${relPath}`, Buffer.from(content, 'utf-8'));
+        }
+        await writeProjectConfig(
+          { extraDocs: [...approvedDocs, ...newFiles.map((f) => f.relPath)] },
+          cwd,
+        );
+      }
+    }
+  }
+
+  console.log(`  ${contents.size} file(s) collected`);
+
+  if (opts.redact) {
+    let redactedFiles = 0;
+    let redactedTotal = 0;
+    for (const [path, content] of contents) {
+      const findings = detectSecrets(content);
+      if (findings.length === 0) continue;
+      contents.set(path, redactSecrets(content));
+      redactedFiles++;
+      redactedTotal += findings.length;
+    }
+    if (redactedTotal > 0) {
+      console.log(`  Redacted ${redactedTotal} secret(s) in ${redactedFiles} file(s) before encrypting.`);
+    }
+  }
+
+  const local: Manifest = { ...emptyManifest('claude-code'), originalPath: cwd };
   for (const [path, content] of contents) {
-    const m = path.match(/^projects\/([^/]+)\/[^/]+\.jsonl$/);
-    if (!m || seenDirs.has(m[1])) continue;
-    const encodedDir = m[1];
-    seenDirs.add(encodedDir);
-    const cwd = extractCwdFromJsonl(content);
-    if (!cwd) continue;
-    const info = identifyProject(cwd);
-    local.projects[encodedDir] = { projectId: info?.projectId ?? null, originalPath: cwd };
+    local.files[path] = { checksum: checksumSha256(content), size: content.length, encryptedSize: 0 };
   }
 
   if (!opts.skipSecretsCheck) {
@@ -71,19 +93,17 @@ export async function syncCommand(opts: SyncOptions = {}): Promise<void> {
     }
     if (findings.length) {
       console.warn(`\n⚠ Found ${findings.length} potential secrets:`);
-      for (const f of findings.slice(0, 10)) {
-        console.warn(`  - ${f.file}: ${f.pattern} (${f.preview})`);
-      }
+      for (const f of findings.slice(0, 10)) console.warn(`  - ${f.file}: ${f.pattern} (${f.preview})`);
       if (findings.length > 10) console.warn(`  …and ${findings.length - 10} more`);
       console.warn('Files are encrypted before upload, but consider removing real secrets.');
       console.warn('Use --skip-secrets-check to bypass.\n');
     }
   }
 
-  console.log('Loading remote manifest…');
+  const manifestPath = remoteManifestPath(projectKey);
   let remote: Manifest = emptyManifest('claude-code');
-  if (await backend.has('manifest.json.enc')) {
-    const enc = await backend.read('manifest.json.enc');
+  if (await backend.has(manifestPath)) {
+    const enc = await backend.read(manifestPath);
     remote = JSON.parse(decrypt(enc, derived).toString('utf-8')) as Manifest;
   }
 
@@ -91,13 +111,6 @@ export async function syncCommand(opts: SyncOptions = {}): Promise<void> {
   console.log(
     `Diff — added: ${diff.added.length}, modified: ${diff.modified.length}, removed: ${diff.removed.length}, unchanged: ${diff.unchanged.length}`,
   );
-
-  // Collect every project-encoded directory present on this machine (for removal guard below).
-  const localProjectDirs = new Set<string>();
-  for (const p of contents.keys()) {
-    const pm = p.match(/^projects\/([^/]+)\//);
-    if (pm) localProjectDirs.add(pm[1]);
-  }
 
   const toUpload = [...diff.added, ...diff.modified];
   let uploaded = 0;
@@ -108,7 +121,7 @@ export async function syncCommand(opts: SyncOptions = {}): Promise<void> {
     const enc = encrypt(content, derived);
     local.files[path].encryptedSize = enc.length;
     try {
-      await backend.write('files/' + path, enc);
+      await backend.write(remoteFilePath(projectKey, path), enc);
     } catch (e) {
       process.stdout.write('\n');
       throw new Error(`Upload failed for "${path}": ${(e as Error).message}`);
@@ -120,26 +133,16 @@ export async function syncCommand(opts: SyncOptions = {}): Promise<void> {
   if (skipped > 0) {
     console.warn(`  ⚠ Skipped ${skipped} file(s) with paths incompatible with GitHub (control chars, .git, etc.)`);
   }
-  let pruned = 0;
   for (const path of diff.removed) {
-    // Without --prune, skip files from project directories absent on this machine.
-    // Those may belong to other machines or to a project that was renamed locally.
-    // With --prune, remove everything that's no longer on this machine (opt-in cleanup).
-    const pm = path.match(/^projects\/([^/]+)\//);
-    if (!opts.prune && pm && !localProjectDirs.has(pm[1])) continue;
-    await backend.remove('files/' + path);
-    pruned++;
-  }
-  if (opts.prune && pruned > 0) {
-    console.log(`  Pruned ${pruned} remote file(s) from absent project directories.`);
+    await backend.remove(remoteFilePath(projectKey, path));
   }
   for (const path of diff.unchanged) {
     local.files[path].encryptedSize = remote.files[path].encryptedSize;
   }
 
   const encryptedManifest = encrypt(Buffer.from(JSON.stringify(local), 'utf-8'), derived);
-  await backend.write('manifest.json.enc', encryptedManifest);
-  await saveManifest(MANIFEST_PATH, local);
+  await backend.write(manifestPath, encryptedManifest);
+  await saveManifest(localManifestPath(projectKey), local);
 
   console.log(
     `\n✓ Sync complete — ${diff.added.length + diff.modified.length} uploaded, ${diff.removed.length} deleted.`,

@@ -1,254 +1,171 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ClaudeCodeAdapter } from '../../src/adapters/claude-code.js';
 import { checksumSha256, decrypt, deriveKey, encrypt } from '../../src/lib/crypto.js';
 import { diffManifests, emptyManifest, type Manifest } from '../../src/lib/manifest.js';
 import { LocalFilesystemBackend } from '../../src/storage/local.js';
-import { encodeProjectPath } from '../../src/lib/path-encoder.js';
-import { remapJsonlBuffer } from '../../src/lib/jsonl-remapper.js';
+import { collectProjectFiles, placeSessionFiles } from '../../src/lib/project-content.js';
+import { remoteManifestPath, remoteFilePath } from '../../src/lib/project-storage-paths.js';
+import { resolveProjectKey } from '../../src/lib/project-identifier.js';
+import { readFileFromPath, writeFileToPath, injectCortexPathBlock } from '../../src/lib/claude-skills.js';
+import { localSessionsDir } from '../../src/lib/team-sessions.js';
 
-// End-to-end: simulate machine A syncing files, then machine B pulling them.
-// Uses the same primitives the real CLI uses, but skips the prompt layer.
-describe('sync→pull round-trip via LocalFilesystemBackend', () => {
-  let machineA: string;
-  let machineB: string;
+// End-to-end: simulate machine A syncing a project's files, then machine B
+// pulling them — exercising the same primitives sync.ts/pull.ts use, scoped
+// per-project (this is the behavior cortex sync/pull now share with cortex team).
+describe('cortex sync → cortex pull round-trip (project-scoped)', () => {
+  let claudeHomeA: string;
+  let claudeHomeB: string;
   let remote: string;
+  const derived = deriveKey('correct-horse-battery-staple', 'dev@example.com');
 
   beforeEach(async () => {
-    machineA = await mkdtemp(join(tmpdir(), 'cortex-A-'));
-    machineB = await mkdtemp(join(tmpdir(), 'cortex-B-'));
+    claudeHomeA = await mkdtemp(join(tmpdir(), 'cortex-homeA-'));
+    claudeHomeB = await mkdtemp(join(tmpdir(), 'cortex-homeB-'));
     remote = await mkdtemp(join(tmpdir(), 'cortex-remote-'));
   });
 
   afterEach(async () => {
-    await rm(machineA, { recursive: true, force: true });
-    await rm(machineB, { recursive: true, force: true });
+    vi.unstubAllEnvs();
+    await rm(claudeHomeA, { recursive: true, force: true });
+    await rm(claudeHomeB, { recursive: true, force: true });
     await rm(remote, { recursive: true, force: true });
   });
 
-  it('A→pull on B→sync from B: A sessions survive in shared storage', async () => {
-    // This is the scenario that breaks naive bidirectional sync:
-    //   1. A syncs  → remote has A's sessions under encodedA
-    //   2. B pulls  → A's sessions remapped to B's paths, written under encodedB
-    //   3. B syncs  → B's disk only has encodedB; should NOT delete encodedA from remote
+  it('carries sessions (remapped), CLAUDE.md, and skills from A to B', async () => {
+    const projectA = await mkdtemp(join(tmpdir(), 'cortex-projA-'));
+    const projectB = await mkdtemp(join(tmpdir(), 'cortex-projB-'));
+    try {
+      await writeFile(join(projectA, 'cortex.json'), JSON.stringify({ projectId: 'myapp' }));
+      await writeFile(join(projectB, 'cortex.json'), JSON.stringify({ projectId: 'myapp' }));
+      const { projectKey } = resolveProjectKey(projectA);
+      expect(resolveProjectKey(projectB).projectKey).toBe(projectKey); // same logical project
 
-    const derived = deriveKey('correct-horse-battery-staple', 'a@example.com');
-    const backend = new LocalFilesystemBackend(remote);
-    const PATH_A = '/home/machineA/myapp';
-    const PATH_B = '/home/machineB/myapp';
-    const encodedA = encodeProjectPath(PATH_A);
-    const encodedB = encodeProjectPath(PATH_B);
+      // ── Seed machine A's project ──────────────────────────────────────────
+      vi.stubEnv('HOME', claudeHomeA);
+      await mkdir(localSessionsDir(projectA), { recursive: true });
+      await writeFile(
+        join(localSessionsDir(projectA), 'session.jsonl'),
+        `{"cwd":"${projectA}","type":"system"}\n`,
+      );
+      await mkdir(join(projectA, '.claude', 'skills'), { recursive: true });
+      await writeFile(join(projectA, '.claude', 'CLAUDE.md'), '# hello team');
+      await writeFile(join(projectA, '.claude', 'skills', 'tdd.md'), '# tdd skill');
+      await writeFile(join(projectA, 'ARCHITECTURE.md'), '# extra doc');
 
-    // ── 1. Machine A syncs ──────────────────────────────────────────────────
-    const aSessionLines = [
-      JSON.stringify({ cwd: PATH_A, type: 'system', uuid: 'u1' }),
-      JSON.stringify({ cwd: PATH_A, type: 'user',   uuid: 'u2' }),
-    ].join('\n') + '\n';
-    const aSession = Buffer.from(aSessionLines);
-    await mkdir(join(machineA, 'projects', encodedA), { recursive: true });
-    await writeFile(join(machineA, 'projects', encodedA, 'session.jsonl'), aSession);
+      // ── SYNC from A ──────────────────────────────────────────────────────
+      const backend = new LocalFilesystemBackend(remote);
+      const contentsA = await collectProjectFiles(projectA);
+      // Extra .md docs (findExtraMdFiles) are approved interactively by sync.ts, not collected here.
+      contentsA.set('docs/ARCHITECTURE.md', Buffer.from('# extra doc', 'utf-8'));
+      expect([...contentsA.keys()].sort()).toEqual([
+        'CLAUDE.md', 'docs/ARCHITECTURE.md', 'sessions/session.jsonl', 'skills/tdd.md',
+      ]);
 
-    const adapterA = new ClaudeCodeAdapter(machineA);
-    const aSyncManifest: Manifest = { ...emptyManifest('claude-code'), projects: {} };
-    for await (const f of adapterA.getFiles()) {
-      const enc = encrypt(f.content, derived);
-      aSyncManifest.files[f.relativePath] = {
-        checksum: checksumSha256(f.content), size: f.content.length, encryptedSize: enc.length,
-      };
-      await backend.write('files/' + f.relativePath, enc);
-    }
-    aSyncManifest.projects![encodedA] = { projectId: null, originalPath: PATH_A };
-    await backend.write('manifest.json.enc',
-      encrypt(Buffer.from(JSON.stringify(aSyncManifest), 'utf-8'), derived));
-
-    // ── 2. Machine B pulls (download, remap A→B, write to B's disk) ─────────
-    const remoteBlob = await backend.read('manifest.json.enc');
-    const remoteManifest = JSON.parse(decrypt(remoteBlob, derived).toString('utf-8')) as Manifest;
-
-    const aFilePath = `projects/${encodedA}/session.jsonl`;
-    const aBlob = await backend.read('files/' + aFilePath);
-    const aDecrypted = decrypt(aBlob, derived);
-    const bRemapped = remapJsonlBuffer(aDecrypted, PATH_A, PATH_B);
-    const bFilePath = `projects/${encodedB}/session.jsonl`;
-
-    const adapterB = new ClaudeCodeAdapter(machineB);
-    await adapterB.putFiles((async function* () {
-      yield { relativePath: bFilePath, content: bRemapped };
-    })());
-
-    // B's local manifest after pull reflects the remapped on-disk state (pull.ts fix).
-    const bPullManifest: Manifest = { ...remoteManifest, files: { ...remoteManifest.files } };
-    delete bPullManifest.files[aFilePath];
-    bPullManifest.files[bFilePath] = {
-      checksum: checksumSha256(bRemapped),
-      size: bRemapped.length,
-      encryptedSize: remoteManifest.files[aFilePath].encryptedSize,
-    };
-    // (In production this is saved to disk; here we hold it in memory for the next step.)
-
-    // ── 3. Machine B syncs ──────────────────────────────────────────────────
-    const bContents = new Map<string, Buffer>();
-    for await (const f of adapterB.getFiles()) bContents.set(f.relativePath, f.content);
-
-    const localProjectDirs = new Set<string>();
-    for (const p of bContents.keys()) {
-      const pm = p.match(/^projects\/([^/]+)\//);
-      if (pm) localProjectDirs.add(pm[1]);
-    }
-    // localProjectDirs = {encodedB}  — encodedA is absent
-
-    const bDiskManifest: Manifest = emptyManifest('claude-code');
-    for (const [path, content] of bContents) {
-      bDiskManifest.files[path] = { checksum: checksumSha256(content), size: content.length, encryptedSize: 0 };
-    }
-
-    const diff = diffManifests(bDiskManifest, remoteManifest);
-    // diff.removed includes aFilePath (in remote, absent on B's disk)
-    // diff.added   includes bFilePath (on B's disk, absent in remote)
-
-    for (const path of diff.removed) {
-      const pm = path.match(/^projects\/([^/]+)\//);
-      if (pm && !localProjectDirs.has(pm[1])) continue; // ← the fix being tested
-      await backend.remove('files/' + path);
-    }
-    for (const path of diff.added) {
-      await backend.write('files/' + path, encrypt(bContents.get(path)!, derived));
-    }
-
-    // ── Verify ───────────────────────────────────────────────────────────────
-    // A's original sessions must NOT have been deleted by B's sync
-    expect(await backend.has(`files/${aFilePath}`)).toBe(true);
-    // B's remapped sessions must now be in shared storage
-    expect(await backend.has(`files/${bFilePath}`)).toBe(true);
-    // B's uploaded content has B's paths, not A's
-    const bUploaded = decrypt(await backend.read(`files/${bFilePath}`), derived).toString('utf-8');
-    expect(bUploaded).toContain(PATH_B);
-    expect(bUploaded).not.toContain(PATH_A);
-  });
-
-  it('Machine B sync does not delete Machine A sessions (bidirectional coexistence)', async () => {
-    const derived = deriveKey('correct-horse-battery-staple', 'a@example.com');
-    const backend = new LocalFilesystemBackend(remote);
-
-    const encodedA = encodeProjectPath('/home/machineA/myapp');
-    const encodedB = encodeProjectPath('/home/machineB/myapp');
-
-    // Seed remote: Machine A's session already synced
-    const aSession = Buffer.from('{"cwd":"/home/machineA/myapp","type":"system"}\n');
-    const aPath = `projects/${encodedA}/a-session.jsonl`;
-    await backend.write(`files/${aPath}`, encrypt(aSession, derived));
-    const remoteManifest: Manifest = emptyManifest('claude-code');
-    remoteManifest.files[aPath] = {
-      checksum: checksumSha256(aSession),
-      size: aSession.length,
-      encryptedSize: aSession.length,
-    };
-    await backend.write('manifest.json.enc',
-      encrypt(Buffer.from(JSON.stringify(remoteManifest), 'utf-8'), derived));
-
-    // Machine B has only its own session — A's project dir is absent locally
-    const bSession = Buffer.from('{"cwd":"/home/machineB/myapp","type":"system"}\n');
-    await mkdir(join(machineB, 'projects', encodedB), { recursive: true });
-    await writeFile(join(machineB, 'projects', encodedB, 'b-session.jsonl'), bSession);
-
-    // Simulate Machine B running syncCommand (the core logic, without prompts)
-    const adapterB = new ClaudeCodeAdapter(machineB);
-    const bContents = new Map<string, Buffer>();
-    for await (const f of adapterB.getFiles()) {
-      bContents.set(f.relativePath, f.content);
-    }
-
-    // Build localProjectDirs (the guard in sync.ts)
-    const localProjectDirs = new Set<string>();
-    for (const p of bContents.keys()) {
-      const pm = p.match(/^projects\/([^/]+)\//);
-      if (pm) localProjectDirs.add(pm[1]);
-    }
-
-    const bManifest: Manifest = emptyManifest('claude-code');
-    for (const [path, content] of bContents) {
-      bManifest.files[path] = { checksum: checksumSha256(content), size: content.length, encryptedSize: 0 };
-    }
-
-    const diff = diffManifests(bManifest, remoteManifest);
-
-    // Apply the guarded removal (mirrors sync.ts fix — skip other machines' project dirs)
-    for (const path of diff.removed) {
-      const pm = path.match(/^projects\/([^/]+)\//);
-      if (pm && !localProjectDirs.has(pm[1])) continue; // guard: not our project
-      await backend.remove('files/' + path);
-    }
-    // Upload B's new files
-    for (const path of diff.added) {
-      await backend.write('files/' + path, encrypt(bContents.get(path)!, derived));
-    }
-
-    // Machine A's session must still exist in shared storage
-    expect(await backend.has(`files/${aPath}`)).toBe(true);
-    // Machine B's session must now exist too
-    expect(await backend.has(`files/projects/${encodedB}/b-session.jsonl`)).toBe(true);
-  });
-
-  it('files written on A appear identically on B after sync→pull', async () => {
-    // 1. Seed machineA with files
-    await mkdir(join(machineA, 'projects', 'foo'), { recursive: true });
-    await writeFile(join(machineA, 'settings.json'), '{"key":"value"}');
-    await writeFile(join(machineA, 'projects', 'foo', 'session.jsonl'), 'line1\nline2\n');
-
-    const derived = deriveKey('correct-horse-battery-staple', 'a@example.com');
-    const backend = new LocalFilesystemBackend(remote);
-    const adapterA = new ClaudeCodeAdapter(machineA);
-
-    // 2. SYNC from A
-    const localManifest: Manifest = emptyManifest('claude-code');
-    const contents = new Map<string, Buffer>();
-    for await (const f of adapterA.getFiles()) {
-      contents.set(f.relativePath, f.content);
-      localManifest.files[f.relativePath] = {
-        checksum: checksumSha256(f.content),
-        size: f.content.length,
-        encryptedSize: 0,
-      };
-    }
-    for (const [path, content] of contents) {
-      const enc = encrypt(content, derived);
-      localManifest.files[path].encryptedSize = enc.length;
-      await backend.write('files/' + path, enc);
-    }
-    const encManifest = encrypt(Buffer.from(JSON.stringify(localManifest), 'utf-8'), derived);
-    await backend.write('manifest.json.enc', encManifest);
-
-    // 3. PULL on B
-    const adapterB = new ClaudeCodeAdapter(machineB);
-    const remoteManifestBlob = await backend.read('manifest.json.enc');
-    const remoteManifest = JSON.parse(
-      decrypt(remoteManifestBlob, derived).toString('utf-8'),
-    ) as Manifest;
-
-    const diff = diffManifests(remoteManifest, emptyManifest('claude-code'));
-    expect(diff.added.sort()).toEqual(['projects/foo/session.jsonl', 'settings.json']);
-
-    async function* gen() {
-      for (const path of diff.added) {
-        const blob = await backend.read('files/' + path);
-        const content = decrypt(blob, derived);
-        const expected = remoteManifest.files[path].checksum;
-        const actual = checksumSha256(content);
-        expect(actual).toBe(expected);
-        yield { relativePath: path, content };
+      const manifestA: Manifest = { ...emptyManifest('claude-code'), originalPath: projectA };
+      for (const [path, content] of contentsA) {
+        manifestA.files[path] = { checksum: checksumSha256(content), size: content.length, encryptedSize: 0 };
+        await backend.write(remoteFilePath(projectKey, path), encrypt(content, derived));
       }
+      await backend.write(
+        remoteManifestPath(projectKey),
+        encrypt(Buffer.from(JSON.stringify(manifestA), 'utf-8'), derived),
+      );
+
+      // ── PULL on B ────────────────────────────────────────────────────────
+      vi.stubEnv('HOME', claudeHomeB);
+      const remoteManifest = JSON.parse(
+        decrypt(await backend.read(remoteManifestPath(projectKey)), derived).toString('utf-8'),
+      ) as Manifest;
+      const diff = diffManifests(remoteManifest, emptyManifest('claude-code'));
+      expect(diff.added.sort()).toEqual([
+        'CLAUDE.md', 'docs/ARCHITECTURE.md', 'sessions/session.jsonl', 'skills/tdd.md',
+      ]);
+
+      const downloaded = new Map<string, Buffer>();
+      for (const path of diff.added) {
+        downloaded.set(path, decrypt(await backend.read(remoteFilePath(projectKey, path)), derived));
+      }
+
+      const sessionFiles = new Map([['session.jsonl', downloaded.get('sessions/session.jsonl')!]]);
+      const written = await placeSessionFiles(projectB, sessionFiles, remoteManifest.originalPath ?? null);
+      expect(written.size).toBe(1);
+
+      await writeFileToPath(
+        join(projectB, '.claude', 'CLAUDE.md'),
+        injectCortexPathBlock(downloaded.get('CLAUDE.md')!.toString('utf-8'), projectB),
+      );
+      await writeFileToPath(
+        join(projectB, '.claude', 'skills', 'tdd.md'),
+        downloaded.get('skills/tdd.md')!.toString('utf-8'),
+      );
+      await writeFileToPath(
+        join(projectB, 'ARCHITECTURE.md'), // docs land at the same relative path as the source
+        downloaded.get('docs/ARCHITECTURE.md')!.toString('utf-8'),
+      );
+
+      // ── Verify ───────────────────────────────────────────────────────────
+      const sessionOnB = await readFile(join(localSessionsDir(projectB), 'session.jsonl'), 'utf-8');
+      expect(sessionOnB).toContain(projectB);
+      expect(sessionOnB).not.toContain(projectA);
+
+      const claudeMdOnB = await readFileFromPath(join(projectB, '.claude', 'CLAUDE.md'));
+      expect(claudeMdOnB).toContain('# hello team');
+      expect(claudeMdOnB).toContain(projectB); // machine-specific cortex-sync path block re-injected
+
+      const skillOnB = await readFileFromPath(join(projectB, '.claude', 'skills', 'tdd.md'));
+      expect(skillOnB).toBe('# tdd skill');
+
+      const docOnB = await readFileFromPath(join(projectB, 'ARCHITECTURE.md'));
+      expect(docOnB).toBe('# extra doc');
+    } finally {
+      await rm(projectA, { recursive: true, force: true });
+      await rm(projectB, { recursive: true, force: true });
     }
-    await adapterB.putFiles(gen());
+  });
 
-    // 4. Verify byte equality A vs B
-    const onA = await readFile(join(machineA, 'projects', 'foo', 'session.jsonl'));
-    const onB = await readFile(join(machineB, 'projects', 'foo', 'session.jsonl'));
-    expect(onB.equals(onA)).toBe(true);
+  it('two different projects on the same personal backend do not collide', async () => {
+    const projectFoo = await mkdtemp(join(tmpdir(), 'cortex-foo-'));
+    const projectBar = await mkdtemp(join(tmpdir(), 'cortex-bar-'));
+    try {
+      await writeFile(join(projectFoo, 'cortex.json'), JSON.stringify({ projectId: 'foo' }));
+      await writeFile(join(projectBar, 'cortex.json'), JSON.stringify({ projectId: 'bar' }));
+      const { projectKey: keyFoo } = resolveProjectKey(projectFoo);
+      const { projectKey: keyBar } = resolveProjectKey(projectBar);
+      expect(keyFoo).not.toBe(keyBar);
 
-    const settingsA = await readFile(join(machineA, 'settings.json'));
-    const settingsB = await readFile(join(machineB, 'settings.json'));
-    expect(settingsB.equals(settingsA)).toBe(true);
+      vi.stubEnv('HOME', claudeHomeA);
+      await mkdir(localSessionsDir(projectFoo), { recursive: true });
+      await writeFile(join(localSessionsDir(projectFoo), 's.jsonl'), 'foo-session\n');
+      await mkdir(localSessionsDir(projectBar), { recursive: true });
+      await writeFile(join(localSessionsDir(projectBar), 's.jsonl'), 'bar-session\n');
+
+      const backend = new LocalFilesystemBackend(remote);
+
+      for (const [key, cwd] of [[keyFoo, projectFoo], [keyBar, projectBar]] as const) {
+        const contents = await collectProjectFiles(cwd);
+        const manifest: Manifest = { ...emptyManifest('claude-code'), originalPath: cwd };
+        for (const [path, content] of contents) {
+          manifest.files[path] = { checksum: checksumSha256(content), size: content.length, encryptedSize: 0 };
+          await backend.write(remoteFilePath(key, path), encrypt(content, derived));
+        }
+        await backend.write(
+          remoteManifestPath(key),
+          encrypt(Buffer.from(JSON.stringify(manifest), 'utf-8'), derived),
+        );
+      }
+
+      // Both projects' data survive independently — syncing one never touches the other's namespace.
+      expect(await backend.has(remoteFilePath(keyFoo, 'sessions/s.jsonl'))).toBe(true);
+      expect(await backend.has(remoteFilePath(keyBar, 'sessions/s.jsonl'))).toBe(true);
+      const fooContent = decrypt(await backend.read(remoteFilePath(keyFoo, 'sessions/s.jsonl')), derived);
+      const barContent = decrypt(await backend.read(remoteFilePath(keyBar, 'sessions/s.jsonl')), derived);
+      expect(fooContent.toString('utf-8')).toBe('foo-session\n');
+      expect(barContent.toString('utf-8')).toBe('bar-session\n');
+    } finally {
+      await rm(projectFoo, { recursive: true, force: true });
+      await rm(projectBar, { recursive: true, force: true });
+    }
   });
 });

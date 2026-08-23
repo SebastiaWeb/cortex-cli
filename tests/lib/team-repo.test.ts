@@ -1,16 +1,30 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, readFile, rm, mkdir } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, mkdir, access } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { authUrl, cloneTeamRepo, hasLocalClone } from '../../src/lib/team-repo.js';
+import { assertSafeRepoUrl, cloneTeamRepo, pullTeamRepo, commitAndPush, hasLocalClone } from '../../src/lib/team-repo.js';
 
-describe('team-repo', () => {
-  it('authUrl embeds token into https URL', () => {
-    const result = authUrl('https://github.com/user/repo', 'ghp_TOKEN');
-    expect(result).toBe('https://ghp_TOKEN@github.com/user/repo');
+describe('assertSafeRepoUrl', () => {
+  it('accepts a normal https GitHub URL', () => {
+    expect(() => assertSafeRepoUrl('https://github.com/org/repo')).not.toThrow();
   });
 
+  it('rejects a URL starting with -- (git argument injection)', () => {
+    expect(() => assertSafeRepoUrl('--upload-pack=touch /tmp/pwned;true'))
+      .toThrow(/repo url/i);
+  });
+
+  it('rejects a non-https URL (e.g. ext:: or ssh:)', () => {
+    expect(() => assertSafeRepoUrl('ext::sh -c touch /tmp/pwned')).toThrow(/repo url/i);
+  });
+
+  it('rejects an empty string', () => {
+    expect(() => assertSafeRepoUrl('')).toThrow(/repo url/i);
+  });
+});
+
+describe('team-repo', () => {
   it('hasLocalClone returns false when dir missing', async () => {
     const result = await hasLocalClone('/nonexistent/path/team');
     expect(result).toBe(false);
@@ -67,6 +81,35 @@ describe('team-repo', () => {
       expect(gitConfig).not.toContain(fakeToken);
       // The clean URL (without token) must be present
       expect(gitConfig).toContain(bare);
+    });
+
+    it('cloneTeamRepo rejects a repoUrl crafted as a git argument-injection payload', async () => {
+      // Reproduces the exploit verified against the pre-fix code:
+      //   git clone "--upload-pack=touch <marker>;true" file://<bare> <dest>
+      // git parses --upload-pack as an option (not a positional URL) and runs
+      // the attacker command before failing the clone. This must be rejected
+      // before spawnSync is ever called — not merely fail safely afterward.
+      const init = spawnSync('git', ['init', '--bare', bare], { stdio: 'pipe' });
+      if (init.status !== 0) return; // skip if git unavailable in this env
+
+      const marker = join(dest, 'pwned-marker');
+      const payload = `--upload-pack=touch ${marker};true`;
+
+      await expect(cloneTeamRepo(payload, 'fake-token', dest)).rejects.toThrow(/repo url/i);
+
+      await expect(access(marker)).rejects.toThrow(); // the injected command must NOT have run
+    });
+
+    it('pullTeamRepo rejects a malicious repoUrl before spawning git', () => {
+      const marker = join(dest, 'pwned-pull-marker');
+      const payload = `--upload-pack=touch ${marker};true`;
+      expect(() => pullTeamRepo(payload, 'fake-token', dest)).toThrow(/repo url/i);
+    });
+
+    it('commitAndPush rejects a malicious repoUrl before spawning git', () => {
+      const marker = join(dest, 'pwned-push-marker');
+      const payload = `--upload-pack=touch ${marker};true`;
+      expect(() => commitAndPush(payload, 'fake-token', 'msg', dest)).toThrow(/repo url/i);
     });
   });
 });

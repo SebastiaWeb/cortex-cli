@@ -8,17 +8,12 @@ export interface ManifestEntry {
   encryptedSize: number;  // size after AES-GCM (0 until uploaded)
 }
 
-export interface ProjectEntry {
-  projectId: string | null;  // null when no git and no cortex.json
-  originalPath: string;      // cwd extracted from JSONL — ground truth path on the source machine
-}
-
 export interface Manifest {
   version: 1;
   generatedAt: string;
   tool: SupportedTool;
   files: Record<string, ManifestEntry>;
-  projects?: Record<string, ProjectEntry>;  // encodedDir → project metadata
+  originalPath?: string;  // cwd of the machine that last synced this project — used to remap sessions on pull
 }
 
 export interface ManifestDiff {

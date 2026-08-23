@@ -14,14 +14,16 @@ Works on **Linux**, **macOS**, and **Windows**.
 
 ## What cortex does
 
-cortex has two independent features:
+cortex has two features that move the same kind of content — sessions, CLAUDE.md, skills, docs — to a different destination, both **scoped to the current project directory**:
 
-| Feature | What it does | Scope |
+| Feature | Destination | Encryption |
 |---|---|---|
-| `cortex team` | Share skills, CLAUDE.md, docs, and sessions with your team via a GitHub repo | Per-project |
-| `cortex sync / pull` | Encrypt and sync **all** `~/.claude/` sessions across your own machines | Whole machine |
+| `cortex team` | A shared GitHub repo other people can read | Sessions optional; CLAUDE.md/skills/docs plaintext |
+| `cortex sync / pull` | Your own personal storage (private GitHub repo or local folder) | Everything, always (AES-256-GCM) |
 
-**Start with `cortex team`** if you want Claude Code to know your project context and share it with teammates. Use `cortex sync / pull` if you work across multiple machines and want your personal session history everywhere.
+**Start with `cortex team`** if you want Claude Code to know your project context and share it with teammates. Use `cortex sync / pull` if you just want your own project context (and history) to follow you across your own machines, encrypted end-to-end.
+
+Run either one from inside the project — both identify it the same way (git remote, or a `cortex.json` override), so the same project always lands in the same place regardless of which machine you're on.
 
 ---
 
@@ -100,36 +102,36 @@ Sessions are encrypted with AES-256-GCM using a shared team passphrase. The pass
 
 ---
 
-## cortex sync / pull — sync your sessions across your own machines
+## cortex sync / pull — sync a project across your own machines
 
-`~/.claude/projects/` uses absolute paths. Switch from your Mac to a Linux server and Claude Code can't find your sessions — the paths don't match. `cortex sync / pull` fixes that.
+`~/.claude/projects/` uses absolute paths. Switch from your Mac to a Linux server and Claude Code can't find your sessions — the paths don't match. `cortex sync / pull` fixes that, and carries CLAUDE.md, skills, and docs along too — everything encrypted end-to-end.
 
-> **Note:** `cortex sync` encrypts and uploads **everything** in `~/.claude/` — all projects, all sessions, from the whole machine. It is not scoped to a single project.
+Run it from inside a project. It's scoped to that project only, the same way `cortex team` is — this is *your* personal version of `cortex team`, without the team: same content (sessions, CLAUDE.md, skills, docs), same per-project scoping, but pushed to your own private storage instead of a shared repo. You can use the same personal backend (one GitHub repo, one Dropbox folder) for every project — each one gets its own namespace inside it, so syncing project B never touches project A's data.
 
 ```
-Machine A (Mac)                        Machine B (Linux)
-─────────────────────────              ──────────────────────────────
-~/.claude/projects/                    ~/.claude/projects/
-  -Users-alice-myapp/                    -home-alice-work-myapp/
-    abc123.jsonl                           abc123.jsonl
-    cwd: /Users/alice/myapp   ──────▶      cwd: /home/alice/work/myapp
-                               cortex        ↑ paths remapped automatically
-                            sync → pull
+Machine A (Mac) — ~/work/myapp          Machine B (Linux) — ~/projects/myapp
+────────────────────────────            ──────────────────────────────────
+.claude/CLAUDE.md, .claude/skills/  ──┐
+~/.claude/projects/-Users-alice-myapp/ ├──▶  cortex          ──▶  same content, paths
+    abc123.jsonl                       │      sync → pull          remapped for this
+    cwd: /Users/alice/myapp            │                           machine's project dir
+                                        │
+                    same project (git remote or cortex.json) on both machines
 ```
 
 ### Setup
 
 ```bash
-# Machine A
-cortex init        # pick GitHub repo or local folder (Dropbox / iCloud / Syncthing)
-cortex sync        # encrypt and upload all ~/.claude/
+# Machine A, from inside the project
+cortex init        # pick GitHub repo or local folder (Dropbox / iCloud / Syncthing) — once per machine
+cortex sync         # encrypt and upload this project's sessions, CLAUDE.md, skills, docs
 
-# Machine B
-cortex init        # same storage, same passphrase
-cortex pull        # download, decrypt, remap paths
+# Machine B, from inside the same project (any local path — it's identified by git remote / cortex.json)
+cortex init         # same storage, same passphrase
+cortex pull         # download, decrypt, remap paths, restore CLAUDE.md/skills/docs
 ```
 
-Open any project on Machine B — Claude Code shows your full session history.
+Open the project on Machine B — Claude Code shows the session history, CLAUDE.md, and skills you synced from Machine A.
 
 ### Update your token
 
@@ -150,9 +152,9 @@ Updates the stored GitHub PAT without re-running `cortex init`.
 | `cortex team pull` | Pull team context and sessions, with conflict resolution |
 | `cortex install` | First-time install from team repo (skills + sessions + docs) |
 | `cortex init` | Configure personal storage, email, and passphrase |
-| `cortex sync` | Encrypt all `~/.claude/` and upload to personal storage |
-| `cortex pull` | Download, decrypt, and remap paths from personal storage |
-| `cortex status` | Show what's out of sync (no download) |
+| `cortex sync` | Sync this project (sessions, CLAUDE.md, skills, docs) to personal storage |
+| `cortex pull` | Download this project's synced context and restore it here, remapped |
+| `cortex status` | Show what's out of sync for this project (no download) |
 | `cortex set-token <token>` | Update GitHub PAT without reconfiguring everything |
 | `cortex convert <file> --to <target>` | Convert a Claude Code skill to Antigravity or Cursor format |
 | `cortex setup-mcp` | Register cortex as a Claude Code MCP server |
@@ -171,11 +173,13 @@ Restart Claude Code and the following tools become available:
 
 | Tool | What it does |
 |---|---|
-| `sync` | Encrypt and upload `~/.claude/` |
-| `pull` | Download, decrypt, remap paths |
-| `status` | Show what's out of sync |
+| `sync` | Sync the current project (sessions, CLAUDE.md, skills, docs) to personal storage |
+| `pull` | Download this project's synced context, decrypt, remap paths |
+| `status` | Show what's out of sync for this project |
 | `convert` | Convert a skill to Antigravity or Cursor |
 | `init` | Configure storage (non-interactive) |
+
+`sync`/`pull`/`status` operate on the directory `cortex mcp` was started in — same scoping as running the CLI commands from a terminal in that project.
 
 ### Environment variables for MCP
 

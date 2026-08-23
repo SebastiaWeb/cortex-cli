@@ -35,21 +35,21 @@ program
 
 program
   .command('sync')
-  .description('Encrypt local files and upload to the configured storage')
+  .description('Sync this project (sessions, CLAUDE.md, skills, docs) to your personal storage — scoped to the current directory, like cortex team')
   .option('--target <path>', 'Override storage to a local folder (overrides config)')
   .option('--skip-secrets-check', 'Skip the regex scan for API keys before encrypting')
-  .option('--prune', 'Also remove remote files from project dirs absent on this machine (reclaims storage from renamed/deleted projects)')
+  .option('--redact', 'Replace detected secrets (API keys, tokens, private keys) with a placeholder before encrypting')
   .action(syncCommand);
 
 program
   .command('pull')
-  .description('Download from storage and restore into ~/.claude/')
+  .description('Download this project\'s synced context from your personal storage and restore it here')
   .option('--target <path>', 'Override storage to a local folder (overrides config)')
   .action((opts) => void pullCommand(opts));
 
 program
   .command('status')
-  .description('Show what is out of sync between local files and storage')
+  .description('Show what is out of sync between this project and your personal storage')
   .option('--target <path>', 'Override storage to a local folder (overrides config)')
   .action(statusCommand);
 
