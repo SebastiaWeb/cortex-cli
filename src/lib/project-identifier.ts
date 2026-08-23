@@ -1,6 +1,7 @@
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { encodeProjectPath } from './path-encoder.js';
 
 export interface ProjectInfo {
   projectId: string;
@@ -59,4 +60,24 @@ export function identifyProject(dir: string): ProjectInfo | null {
   }
 
   return null;
+}
+
+export interface ProjectKey {
+  projectId: string;
+  projectKey: string; // filesystem/GitHub-safe storage namespace derived from projectId
+}
+
+/**
+ * Resolves the stable storage namespace for personal `cortex sync`/`pull`/`status`,
+ * scoped to `dir` — the same identification cortex team already uses.
+ */
+export function resolveProjectKey(dir: string): ProjectKey {
+  const info = identifyProject(dir);
+  if (!info) {
+    throw new Error(
+      'Could not identify this project (no git remote, no first commit, and no cortex.json).\n' +
+        'Run this inside a git repository, or add a "projectId" field to cortex.json in the project root.',
+    );
+  }
+  return { projectId: info.projectId, projectKey: encodeProjectPath(info.projectId) };
 }

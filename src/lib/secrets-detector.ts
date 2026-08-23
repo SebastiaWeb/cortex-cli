@@ -31,3 +31,18 @@ export function detectSecrets(content: Buffer | string): SecretMatch[] {
   }
   return matches;
 }
+
+/**
+ * Replaces every secret match with a labeled placeholder, so `cortex sync --redact`
+ * can strip real credentials before they're ever encrypted and uploaded — matching
+ * the pattern standalone tools like claude-vault use, applied at sync time instead
+ * of at command-execution time.
+ */
+export function redactSecrets(content: Buffer | string): Buffer {
+  let text = typeof content === 'string' ? content : content.toString('utf-8');
+  for (const p of PATTERNS) {
+    const regex = new RegExp(p.regex.source, p.regex.flags);
+    text = text.replace(regex, `[REDACTED:${p.name}]`);
+  }
+  return Buffer.from(text, 'utf-8');
+}

@@ -53,19 +53,24 @@ export async function mcpCommand(): Promise<void> {
     'sync',
     {
       description:
-        'Encrypt ~/.claude/ and upload to configured storage. Requires CORTEX_PASSPHRASE env var.',
+        'Sync the current project (sessions, CLAUDE.md, skills, docs) to your personal storage — ' +
+        'scoped to the working directory cortex mcp was started in. Requires CORTEX_PASSPHRASE env var.',
       inputSchema: z.object({
         skipSecretsCheck: z
           .boolean()
           .optional()
           .describe('Skip the API key detection warning before encrypting'),
+        redact: z
+          .boolean()
+          .optional()
+          .describe('Replace detected secrets with a placeholder before encrypting'),
         target: z.string().optional().describe('Override storage to a local folder path'),
       }),
     },
-    async ({ skipSecretsCheck, target }) => {
+    async ({ skipSecretsCheck, redact, target }) => {
       try {
         requirePassphrase();
-        const { output } = await captureOutput(() => syncCommand({ skipSecretsCheck, target }));
+        const { output } = await captureOutput(() => syncCommand({ skipSecretsCheck, redact, target }));
         return ok(output);
       } catch (e) {
         return toolErr(e);
@@ -77,32 +82,16 @@ export async function mcpCommand(): Promise<void> {
     'pull',
     {
       description:
-        'Download from storage, decrypt, and remap paths into ~/.claude/. ' +
-        'If pendingMappings is returned, call pull again with projectMappings populated.',
+        "Download this project's synced context from your personal storage and restore it here, " +
+        'remapping session paths automatically. Conflicts keep the local version (non-interactive).',
       inputSchema: z.object({
         target: z.string().optional().describe('Override storage to a local folder path'),
-        projectMappings: z
-          .record(z.string(), z.string())
-          .optional()
-          .describe('Map of projectId or originalPath to local path on this machine'),
       }),
     },
-    async ({ target, projectMappings }) => {
+    async ({ target }) => {
       try {
         requirePassphrase();
-        const result = await pullCommand({ target, projectMappings, nonInteractive: true });
-        if (result.pendingMappings?.length) {
-          const lines = result.pendingMappings.map(
-            (p) => `  "${p.originalPath}" (projectId: ${p.projectId ?? 'none'})`,
-          );
-          return ok(
-            `Restored ${result.filesRestored} files.\n\n` +
-              `These projects need a local path mapping.\n` +
-              `Call pull again with projectMappings, e.g.:\n` +
-              `  { "${result.pendingMappings[0].projectId ?? result.pendingMappings[0].originalPath}": "/your/local/path" }\n\n` +
-              `Pending projects:\n${lines.join('\n')}`,
-          );
-        }
+        const result = await pullCommand({ target, nonInteractive: true });
         return ok(`Pull complete. ${result.filesRestored} files restored.`);
       } catch (e) {
         return toolErr(e);
@@ -113,7 +102,7 @@ export async function mcpCommand(): Promise<void> {
   server.registerTool(
     'status',
     {
-      description: 'Show what is out of sync between local ~/.claude/ files and storage.',
+      description: 'Show what is out of sync between this project and your personal storage.',
       inputSchema: z.object({
         target: z.string().optional().describe('Override storage to a local folder path'),
       }),
