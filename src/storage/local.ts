@@ -53,6 +53,14 @@ export class LocalFilesystemBackend implements IStorageBackend {
     }
   }
 
+  async writeMany(files: Array<{ path: string; content: Buffer }>): Promise<void> {
+    for (const f of files) await this.write(f.path, f.content);
+  }
+
+  async removeMany(paths: string[]): Promise<void> {
+    for (const path of paths) await this.remove(path);
+  }
+
   private async walk(dir: string, out: RemoteFile[]): Promise<void> {
     let entries;
     try {

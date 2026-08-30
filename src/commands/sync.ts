@@ -2,6 +2,7 @@ import { confirm } from '@inquirer/prompts';
 import { resolveBackend } from '../lib/backend-resolver.js';
 import { loadConfig } from '../lib/config.js';
 import { checksumSha256, decrypt, deriveKey, encrypt } from '../lib/crypto.js';
+import { compress, decompress } from '../lib/compress.js';
 import { diffManifests, emptyManifest, type Manifest, saveManifest } from '../lib/manifest.js';
 import { readPassphrase } from '../lib/passphrase.js';
 import { detectSecrets, redactSecrets } from '../lib/secrets-detector.js';
@@ -104,7 +105,7 @@ export async function syncCommand(opts: SyncOptions = {}): Promise<void> {
   let remote: Manifest = emptyManifest('claude-code');
   if (await backend.has(manifestPath)) {
     const enc = await backend.read(manifestPath);
-    remote = JSON.parse(decrypt(enc, derived).toString('utf-8')) as Manifest;
+    remote = JSON.parse(decompress(decrypt(enc, derived)).toString('utf-8')) as Manifest;
   }
 
   const diff = diffManifests(local, remote);
@@ -113,35 +114,36 @@ export async function syncCommand(opts: SyncOptions = {}): Promise<void> {
   );
 
   const toUpload = [...diff.added, ...diff.modified];
-  let uploaded = 0;
+  const uploads: Array<{ path: string; content: Buffer }> = [];
   let skipped = 0;
   for (const path of toUpload) {
     if (!isSafeGitHubPath(path)) { skipped++; continue; }
     const content = contents.get(path)!;
-    const enc = encrypt(content, derived);
+    const enc = encrypt(compress(content), derived);
     local.files[path].encryptedSize = enc.length;
-    try {
-      await backend.write(remoteFilePath(projectKey, path), enc);
-    } catch (e) {
-      process.stdout.write('\n');
-      throw new Error(`Upload failed for "${path}": ${(e as Error).message}`);
-    }
-    uploaded++;
-    process.stdout.write(`\r  Uploading… ${uploaded}/${toUpload.length - skipped} files`);
+    uploads.push({ path: remoteFilePath(projectKey, path), content: enc });
   }
-  if (toUpload.length > 0) process.stdout.write('\n');
   if (skipped > 0) {
     console.warn(`  ⚠ Skipped ${skipped} file(s) with paths incompatible with GitHub (control chars, .git, etc.)`);
-  }
-  for (const path of diff.removed) {
-    await backend.remove(remoteFilePath(projectKey, path));
   }
   for (const path of diff.unchanged) {
     local.files[path].encryptedSize = remote.files[path].encryptedSize;
   }
 
-  const encryptedManifest = encrypt(Buffer.from(JSON.stringify(local), 'utf-8'), derived);
-  await backend.write(manifestPath, encryptedManifest);
+  const encryptedManifest = encrypt(compress(Buffer.from(JSON.stringify(local), 'utf-8')), derived);
+  uploads.push({ path: manifestPath, content: encryptedManifest });
+
+  if (uploads.length > 0) console.log(`  Uploading ${uploads.length} file(s)…`);
+  try {
+    await backend.writeMany(uploads);
+  } catch (e) {
+    throw new Error(`Upload failed: ${(e as Error).message}`);
+  }
+
+  if (diff.removed.length > 0) {
+    await backend.removeMany(diff.removed.map((path) => remoteFilePath(projectKey, path)));
+  }
+
   await saveManifest(localManifestPath(projectKey), local);
 
   console.log(

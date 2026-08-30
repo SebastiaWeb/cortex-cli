@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { decrypt, deriveKey } from '../../src/lib/crypto.js';
+import { decompress } from '../../src/lib/compress.js';
 import { LocalFilesystemBackend } from '../../src/storage/local.js';
 import { remoteFilePath } from '../../src/lib/project-storage-paths.js';
 import { resolveProjectKey } from '../../src/lib/project-identifier.js';
@@ -55,7 +56,7 @@ describe('cortex sync --redact', () => {
     const { projectKey } = resolveProjectKey(project);
     const backend = new LocalFilesystemBackend(remote);
     const blob = await backend.read(remoteFilePath(projectKey, 'CLAUDE.md'));
-    const uploaded = decrypt(blob, derived).toString('utf-8');
+    const uploaded = decompress(decrypt(blob, derived)).toString('utf-8');
 
     expect(uploaded).not.toContain(secret);
     expect(uploaded).toContain('[REDACTED:AWS Access Key]');
@@ -67,7 +68,7 @@ describe('cortex sync --redact', () => {
     const { projectKey } = resolveProjectKey(project);
     const backend = new LocalFilesystemBackend(remote);
     const blob = await backend.read(remoteFilePath(projectKey, 'CLAUDE.md'));
-    const uploaded = decrypt(blob, derived).toString('utf-8');
+    const uploaded = decompress(decrypt(blob, derived)).toString('utf-8');
 
     expect(uploaded).toContain(secret);
   });

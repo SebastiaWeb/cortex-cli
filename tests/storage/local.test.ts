@@ -49,6 +49,21 @@ describe('LocalFilesystemBackend', () => {
     expect(await fresh.list()).toEqual([]);
   });
 
+  it('writeMany writes every file in the batch', async () => {
+    await backend.writeMany([
+      { path: 'a.txt', content: Buffer.from('1') },
+      { path: 'nested/b.txt', content: Buffer.from('2') },
+    ]);
+    expect((await backend.read('a.txt')).toString()).toBe('1');
+    expect((await backend.read('nested/b.txt')).toString()).toBe('2');
+  });
+
+  it('removeMany removes every path in the batch; idempotent on missing ones', async () => {
+    await backend.write('gone1', Buffer.from('x'));
+    await backend.removeMany(['gone1', 'gone2']);
+    expect(await backend.has('gone1')).toBe(false);
+  });
+
   describe('path traversal protection', () => {
     it('read() throws on ../escape', async () => {
       await expect(backend.read('../etc/passwd')).rejects.toThrow('Path traversal');
