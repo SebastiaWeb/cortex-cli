@@ -36,6 +36,7 @@ src/
     team-sessions.ts      ← localSessionsDir(), readSessionFiles() — shared by sync and team
     team-repo.ts          ← git clone/pull/push via GIT_ASKPASS (token never in URLs)
     crypto.ts             ← AES-256-GCM encrypt/decrypt, PBKDF2 key derivation
+    compress.ts            ← gzip before encrypt (sync) / after decrypt (pull) — JSONL compresses ~10:1
     jsonl-remapper.ts     ← rewrite structural path fields in JSONL sessions
     manifest.ts           ← per-file checksums (SHA-256), diff logic
     config.ts             ← load/save ~/.cortex/config.json (personal storage, machine-wide)
@@ -43,7 +44,8 @@ src/
     conflict.ts           ← detect and resolve skill/CLAUDE.md conflicts
     secrets-detector.ts   ← scan files for API keys before encrypting
   storage/
-    github.ts             ← GitHub REST API backend
+    github.ts             ← GitHub backend — Git Data API (blobs/trees/commits), not the Contents API;
+                             writeMany/removeMany batch a whole sync into one commit
     local.ts              ← local filesystem backend
   adapters/
     claude-code.ts        ← generic ~/.claude/ tree adapter (multi-tool skill conversion; not used by sync/pull/status)
@@ -85,6 +87,14 @@ Non-object JSON lines (strings, arrays, null) must pass through byte-for-byte un
 ### Checksum consistency
 After remapping a JSONL file on pull, save the local manifest with the REMAPPED checksum (what's actually on disk), not the remote checksum. Otherwise every subsequent pull re-downloads unchanged files. Same rule for CLAUDE.md: checksum the pre-`injectCortexPathBlock` content (matching what the remote manifest stores), not the machine-specific block that gets written to disk.
 
+Checksums are always computed on the **uncompressed** content, before `compress()`. Compression is purely a transport detail at the encrypt/decrypt boundary — it must never affect what the manifest diff considers "changed".
+
+### Compress before encrypt, decompress after decrypt — always in that order
+`compress()` runs on plaintext before `encrypt()`; `decompress()` runs on plaintext after `decrypt()`. Never compress ciphertext (it won't compress — encrypted bytes are high-entropy) and never encrypt already-compressed-then-modified content out of order. Every read/write of content through a storage backend goes through this pair; the manifest and secrets-detector/redact always operate on the pre-compression, pre-encryption bytes.
+
+### GitHub backend uses the Git Data API, not the Contents API
+`GitHubBackend.read()` fetches by blob sha (`GET /git/blobs/{sha}`) rather than the Contents API's `content` field, which GitHub omits for files over 1MB. `write()`/`remove()` are single-item wrappers around `writeMany()`/`removeMany()`, which batch a whole set of changes into one blob→tree→commit→ref-update sequence. Never add a code path that PUTs/DELETEs through the Contents API (`/contents/{path}`) for file content — only `has()`/`getSha()` still use it, for metadata lookups, which have no size limit.
+
 ### cortex-sync path block
 `injectCortexPathBlock()` adds a machine-specific block to `.claude/CLAUDE.md` on `cortex pull`/`team pull`/`install`. This block MUST be stripped with `stripCortexPathBlock()` before CLAUDE.md is uploaded anywhere — `cortex sync` (via `collectProjectFiles()`) and `team push`/`init` both do this — it contains the local machine path and must never reach storage or the team repo.
 
@@ -93,7 +103,7 @@ After remapping a JSONL file on pull, save the local manifest with the REMAPPED 
 ```bash
 npm run build       # tsup → dist/cli.js
 npm run typecheck   # tsc --noEmit
-npm test            # vitest run (27 test files, ~158 tests)
+npm test            # vitest run (29 test files, ~169 tests)
 npm version patch   # bump version
 npm publish         # runs prepublishOnly → build automatically before packaging
 ```
@@ -137,6 +147,9 @@ if (raw !== null && typeof raw === 'object' && !Array.isArray(raw)) {
 
 ### 8. cortex sync/pull synced the whole machine, not the project (breaking change)
 Before this change, `cortex sync` walked all of `~/.claude/` (`ClaudeCodeAdapter`) and used a single machine-wide `manifest.json.enc` per personal backend. Two problems: it dumped every project's session history into one backup regardless of what you actually wanted synced, and if you used the same personal backend across multiple projects, the second project's sync would silently overwrite the first project's manifest (files stayed in storage but became invisible to `pull`/`status`). Fixed by scoping `sync`/`pull`/`status` to `resolveProjectKey(cwd)`, namespacing every remote path under `<projectKey>` (see "Per-project storage namespacing" above), and having `cortex sync` collect the same content `cortex team push` does (sessions, CLAUDE.md, skills, docs) instead of the raw `~/.claude/` tree. `resolveLocalPath()` and `path-mappings.ts` — built for resolving ambiguous multi-project remote manifests — were removed entirely: with one project per namespace there's no ambiguity to resolve, `pull` just uses `cwd`. `ClaudeCodeAdapter` is unused by sync/pull/status now (kept for the skill-conversion adapters). No migration path for old whole-machine backups.
+
+### 9. GitHubBackend used the Contents API for file content, which silently breaks on files >1MB
+The Contents API omits the `content` field in its GET response for files over 1MB (it still returns `sha`/`size`) — `cortex pull`/`status` never errored, they just got no content. On this machine, 7 of 16 real sessions were already over the limit. Fixed by routing content reads/writes through the Git Data API (`/git/blobs`, `/git/trees`, `/git/commits`) instead — `has()`/`getSha()` still use the Contents API since metadata lookups have no size limit. Never add a content PUT/DELETE against `/contents/{path}` again.
 
 ## Auth error messages
 
@@ -190,6 +203,8 @@ Key test scenarios:
 - `claude-skills.test.ts` — inject/strip cortex block round-trip
 - `project-identifier.test.ts` — `resolveProjectKey` derives a storage-safe key, throws when no git/`cortex.json`
 - `project-content.test.ts` — `collectProjectFiles` assembles sessions+CLAUDE.md+skills; `placeSessionFiles` remaps on write
+- `sync-compression.test.ts` — uploaded blob is smaller and unreadable without `decompress()`; pull restores exact original bytes
+- `github.test.ts` — `read()` fetches via Blobs API when Contents metadata omits `content` (>1MB); `writeMany()`/`removeMany()` batch N files into one commit, not N commits
 
 ## Plugin marketplace
 

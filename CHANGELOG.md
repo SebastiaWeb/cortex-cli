@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **The GitHub backend now works with sessions over 1MB.** `cortex sync`/`pull`/`status` previously used the Contents API, which omits the `content` field entirely for files over 1MB — `cortex pull`/`status` silently failed or corrupted state for any session that size. On this machine, 7 of 16 real sessions were already over the limit (largest: 46MB). Fixed by moving reads and writes to the Git Data API (blobs + trees + commits) instead of the Contents API. `GitHubBackend.read()` now fetches by blob sha (`GET /git/blobs/{sha}`), which has no such limit.
+- **`cortex sync` now uploads as one commit per run** (two if there are deletions), not one commit per changed file. `write`/`remove` are now batched through new `writeMany`/`removeMany` methods on `IStorageBackend` — a single blob/tree/commit/ref-update sequence for the whole batch, instead of a separate Contents-API PUT (and commit) per file.
+- **Content is now gzip-compressed before encryption** (`src/lib/compress.ts`) on both backends. JSONL sessions are highly repetitive and typically compress 10:1+ — smaller uploads, and fewer files anywhere near a size limit to begin with.
+- Not changed: `GitHubBackend.list()`'s `truncated` tree-pagination gap noted in the roadmap turned out to be dead code — nothing in `sync`/`pull`/`status` actually calls `list()` (they address files directly by known manifest paths). Left as-is rather than building pagination for a method nothing uses.
+- **No migration path**: existing remote manifests/files from 0.5.0 are plaintext-after-decrypt (uncompressed); this version expects gzip-compressed content after decrypt. Re-run `cortex sync` from each project after upgrading.
+
+## [0.5.0] - 2026-08-30
+
 ### Security
 
 - **Fixed a remote code execution vulnerability** in `cortex team init`/`push`/`pull` and `cortex install`. `repoUrl` — read from `cortex.json`, a committed and therefore untrusted file — was passed to `git clone`/`pull`/`push` as a bare positional argument. A `repoUrl` starting with `--upload-pack=<command>` was parsed by git as an option, not a URL, and the injected command ran before the clone failed. Verified against the pre-fix code with a working PoC, and against the real attack chain end-to-end (`cortex.json` with a malicious `repo` field → `cortex install`, exactly as the README instructs). Fixed with `assertSafeRepoUrl()` (repo URL must start with `https://`) plus defense in depth on every git invocation: a `--` separator before the URL and `-c protocol.ext.allow=never`. See `src/lib/team-repo.ts`.

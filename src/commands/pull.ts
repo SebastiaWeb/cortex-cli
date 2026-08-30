@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { resolveBackend } from '../lib/backend-resolver.js';
 import { loadConfig } from '../lib/config.js';
 import { checksumSha256, decrypt, deriveKey } from '../lib/crypto.js';
+import { decompress } from '../lib/compress.js';
 import { diffManifests, emptyManifest, loadManifest, type Manifest, saveManifest } from '../lib/manifest.js';
 import { readPassphrase } from '../lib/passphrase.js';
 import { resolveProjectKey } from '../lib/project-identifier.js';
@@ -42,7 +43,7 @@ export async function pullCommand(opts: PullOptions = {}): Promise<PullResult> {
     throw new Error('No synced data found for this project. Run "cortex sync" first (from any machine).');
   }
   const enc = await backend.read(manifestPath);
-  const remote = JSON.parse(decrypt(enc, derived).toString('utf-8')) as Manifest;
+  const remote = JSON.parse(decompress(decrypt(enc, derived)).toString('utf-8')) as Manifest;
 
   const local: Manifest = (await loadManifest(localManifestPath(projectKey))) ?? emptyManifest('claude-code');
 
@@ -56,7 +57,7 @@ export async function pullCommand(opts: PullOptions = {}): Promise<PullResult> {
   let count = 0;
   for (const path of toPull) {
     const blob = await backend.read(remoteFilePath(projectKey, path));
-    const content = decrypt(blob, derived);
+    const content = decompress(decrypt(blob, derived));
     const expected = remote.files[path].checksum;
     const actual = checksumSha256(content);
     if (expected !== actual) {

@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { checksumSha256, deriveKey, encrypt } from '../../src/lib/crypto.js';
+import { compress } from '../../src/lib/compress.js';
 import { emptyManifest, type Manifest } from '../../src/lib/manifest.js';
 import { LocalFilesystemBackend } from '../../src/storage/local.js';
 import { remoteManifestPath, remoteFilePath } from '../../src/lib/project-storage-paths.js';
@@ -58,8 +59,8 @@ describe('cortex pull rejects path traversal from a malicious remote manifest', 
     const payload = Buffer.from('pwned-by-manifest\n');
     const manifest: Manifest = { ...emptyManifest('claude-code'), originalPath: project };
     manifest.files[entryPath] = { checksum: checksumSha256(payload), size: payload.length, encryptedSize: 0 };
-    await backend.write(remoteFilePath(projectKey, entryPath), encrypt(payload, derived));
-    await backend.write(remoteManifestPath(projectKey), encrypt(Buffer.from(JSON.stringify(manifest)), derived));
+    await backend.write(remoteFilePath(projectKey, entryPath), encrypt(compress(payload), derived));
+    await backend.write(remoteManifestPath(projectKey), encrypt(compress(Buffer.from(JSON.stringify(manifest))), derived));
   }
 
   it('rejects a malicious docs/ entry instead of writing outside the project', async () => {

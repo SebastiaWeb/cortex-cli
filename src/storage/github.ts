@@ -3,7 +3,12 @@ import type { IStorageBackend, RemoteFile } from './types.js';
 interface GHContentResponse {
   sha: string;
   size: number;
+  content?: string; // base64, wrapped at 60 chars — omitted by GitHub for files >1MB
+}
+
+interface GHBlobResponse {
   content: string; // base64, wrapped at 60 chars
+  encoding: string;
 }
 
 interface GHTreeNode {
@@ -15,6 +20,11 @@ interface GHTreeNode {
 interface GHTreeResponse {
   tree: GHTreeNode[];
   truncated?: boolean;
+}
+
+export interface FileWrite {
+  path: string;
+  content: Buffer;
 }
 
 export class GitHubBackend implements IStorageBackend {
@@ -57,46 +67,121 @@ export class GitHubBackend implements IStorageBackend {
     return true;
   }
 
+  /**
+   * Reads via the Blobs API (by sha), not the Contents API's content field —
+   * GitHub omits `content` in the Contents API response for files over 1MB,
+   * silently truncating pull/status for any session that size. The Blobs API
+   * has no such limit.
+   */
   async read(path: string): Promise<Buffer> {
-    const res = await fetch(this.url(path), { headers: this.headers });
+    const sha = await this.getSha(path);
+    if (!sha) throw new Error(`GitHub read failed (404): ${path}`);
+    const res = await fetch(`${this.apiBase}/git/blobs/${sha}`, { headers: this.headers });
     if (!res.ok) throw new Error(`GitHub read failed (${res.status}): ${path}`);
-    const data = (await res.json()) as GHContentResponse;
-    // GitHub wraps base64 at 60 chars — strip newlines before decoding
+    const data = (await res.json()) as GHBlobResponse;
     return Buffer.from(data.content.replace(/\n/g, ''), 'base64');
   }
 
   async write(path: string, content: Buffer): Promise<void> {
-    const sha = await this.getSha(path);
-    const body: Record<string, unknown> = {
-      message: `cortex: update ${path}`,
-      content: content.toString('base64'),
-    };
-    if (sha) body.sha = sha;
-
-    const res = await fetch(this.url(path), {
-      method: 'PUT',
-      headers: { ...this.headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`GitHub write failed (${res.status}): ${text}`);
-    }
+    await this.writeMany([{ path, content }]);
   }
 
   async remove(path: string): Promise<void> {
-    const sha = await this.getSha(path);
-    if (!sha) return; // idempotent — already gone
+    await this.removeMany([path]);
+  }
 
-    const res = await fetch(this.url(path), {
-      method: 'DELETE',
-      headers: { ...this.headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: `cortex: remove ${path}`, sha }),
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`GitHub delete failed (${res.status}): ${text}`);
+  /**
+   * Uploads any number of files as ONE commit via the Git Data API
+   * (blob per file, one tree, one commit, one ref update) — instead of one
+   * Contents-API PUT (and one commit) per file. Fixes both the 1MB-per-file
+   * limit and the commit spam a large sync used to produce.
+   */
+  async writeMany(files: FileWrite[]): Promise<void> {
+    if (files.length === 0) return;
+    const branch = await this.getDefaultBranch();
+    const parentSha = await this.getRefSha(branch);
+    const baseTreeSha = await this.getCommitTreeSha(parentSha);
+
+    const entries = [];
+    for (const f of files) {
+      const blobSha = await this.createBlob(f.content);
+      entries.push({ path: f.path, mode: '100644', type: 'blob', sha: blobSha });
     }
+    await this.commitTreeEntries(branch, parentSha, baseTreeSha, entries, `cortex: update ${files.length} file(s)`);
+  }
+
+  /** Deletes any number of paths as one commit (tree entries with sha: null). */
+  async removeMany(paths: string[]): Promise<void> {
+    if (paths.length === 0) return;
+    const branch = await this.getDefaultBranch();
+    const parentSha = await this.getRefSha(branch);
+    const baseTreeSha = await this.getCommitTreeSha(parentSha);
+
+    const entries = paths.map((path) => ({ path, mode: '100644', type: 'blob', sha: null }));
+    await this.commitTreeEntries(branch, parentSha, baseTreeSha, entries, `cortex: remove ${paths.length} file(s)`);
+  }
+
+  private async getDefaultBranch(): Promise<string> {
+    const res = await fetch(this.apiBase, { headers: this.headers });
+    if (!res.ok) throw new Error(`GitHub API error ${res.status} fetching repo info`);
+    const data = (await res.json()) as { default_branch: string };
+    return data.default_branch;
+  }
+
+  private async getRefSha(branch: string): Promise<string> {
+    const res = await fetch(`${this.apiBase}/git/refs/heads/${branch}`, { headers: this.headers });
+    if (!res.ok) throw new Error(`GitHub API error ${res.status} fetching ref heads/${branch}`);
+    const data = (await res.json()) as { object: { sha: string } };
+    return data.object.sha;
+  }
+
+  private async getCommitTreeSha(commitSha: string): Promise<string> {
+    const res = await fetch(`${this.apiBase}/git/commits/${commitSha}`, { headers: this.headers });
+    if (!res.ok) throw new Error(`GitHub API error ${res.status} fetching commit ${commitSha}`);
+    const data = (await res.json()) as { tree: { sha: string } };
+    return data.tree.sha;
+  }
+
+  private async createBlob(content: Buffer): Promise<string> {
+    const res = await fetch(`${this.apiBase}/git/blobs`, {
+      method: 'POST',
+      headers: { ...this.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: content.toString('base64'), encoding: 'base64' }),
+    });
+    if (!res.ok) throw new Error(`GitHub API error ${res.status} creating blob`);
+    const data = (await res.json()) as { sha: string };
+    return data.sha;
+  }
+
+  private async commitTreeEntries(
+    branch: string,
+    parentSha: string,
+    baseTreeSha: string,
+    entries: Array<{ path: string; mode: string; type: string; sha: string | null }>,
+    message: string,
+  ): Promise<void> {
+    const treeRes = await fetch(`${this.apiBase}/git/trees`, {
+      method: 'POST',
+      headers: { ...this.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base_tree: baseTreeSha, tree: entries }),
+    });
+    if (!treeRes.ok) throw new Error(`GitHub API error ${treeRes.status} creating tree`);
+    const { sha: newTreeSha } = (await treeRes.json()) as { sha: string };
+
+    const commitRes = await fetch(`${this.apiBase}/git/commits`, {
+      method: 'POST',
+      headers: { ...this.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, tree: newTreeSha, parents: [parentSha] }),
+    });
+    if (!commitRes.ok) throw new Error(`GitHub API error ${commitRes.status} creating commit`);
+    const { sha: newCommitSha } = (await commitRes.json()) as { sha: string };
+
+    const refRes = await fetch(`${this.apiBase}/git/refs/heads/${branch}`, {
+      method: 'PATCH',
+      headers: { ...this.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sha: newCommitSha }),
+    });
+    if (!refRes.ok) throw new Error(`GitHub API error ${refRes.status} updating ref heads/${branch}`);
   }
 
   async list(): Promise<RemoteFile[]> {
