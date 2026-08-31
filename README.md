@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/brand/logo.png" alt="cortex" width="220">
+</p>
+
 # cortex
 
 **Share Claude Code context with your team. Sync your sessions between machines.**
