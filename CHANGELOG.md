@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.6.0] - 2026-09-07
 
 ### Security
 
@@ -10,6 +10,7 @@
 - **`cortex sync --strict`**: refuses to sync (throws) if the secrets scanner finds anything, instead of just warning. Combine with `--redact` to scrub first and sync anyway.
 - **`ensureGitHubRepo` now checks visibility before treating "repo already exists" as success.** Creating a repo returns 422 if one with that name already exists — the old code treated any 422 as fine. If that existing repo turns out to be public, `cortex init`/`sync` now throws instead of uploading encrypted backups to it: ciphertext stays opaque, but file names, project structure, and timestamps would still be exposed.
 - Fixed `cortex status`: it was never updated to `decompress()` remote manifests when compression was added in 0.5.1, so it would have thrown a JSON parse error on gzip bytes the first time anyone ran it against a real backend.
+- **No migration path**: a remote synced under 0.5.x used `SHA256(email)` as the salt and no AAD. This version generates a random salt on first contact with a project and derives a different key from it, so it cannot decrypt a pre-0.6.0 remote — `cortex pull`/`status` fail with a raw `Unsupported state or unable to authenticate data` from Node's crypto module (verified against a real pre-0.6.0-shaped remote), not a clear "please re-sync" message. Run `cortex sync` from your main machine after upgrading, before pulling from any other machine.
 
 ## [0.5.1] - 2026-08-30
 
