@@ -13,3 +13,6 @@ config.json
 api-key.enc
 manifest.json
 path-mappings.json
+
+# dev-only context for Claude Code — kept local, not published in this open-source repo
+/CLAUDE.md
