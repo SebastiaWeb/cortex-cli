@@ -13,23 +13,35 @@ export interface DerivedKey {
   readonly key: Buffer;
 }
 
-export function deriveKey(passphrase: string, email: string): DerivedKey {
+export function deriveKeyFromSalt(passphrase: string, salt: Buffer): DerivedKey {
   if (!passphrase) throw new Error('passphrase is required');
-  if (!email) throw new Error('email is required');
-  const salt = createHash('sha256').update(email.toLowerCase().trim()).digest();
   const key = pbkdf2Sync(passphrase, salt, PBKDF2_ITERATIONS, KEY_LEN, 'sha256');
   return { key };
 }
 
-export function encrypt(plaintext: Buffer, derived: DerivedKey): Buffer {
+export function deriveKey(passphrase: string, email: string): DerivedKey {
+  if (!email) throw new Error('email is required');
+  const salt = createHash('sha256').update(email.toLowerCase().trim()).digest();
+  return deriveKeyFromSalt(passphrase, salt);
+}
+
+/**
+ * `aad` (additional authenticated data) is typically the storage path this
+ * blob lives at. It isn't encrypted, but GCM authenticates it — decrypt fails
+ * if the AAD given doesn't match what was used to encrypt, which is what
+ * stops a ciphertext moved from one path to another from decrypting as if it
+ * still belonged to its original path.
+ */
+export function encrypt(plaintext: Buffer, derived: DerivedKey, aad?: Buffer): Buffer {
   const iv = randomBytes(IV_LEN);
   const cipher = createCipheriv('aes-256-gcm', derived.key, iv);
+  if (aad) cipher.setAAD(aad);
   const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
   const tag = cipher.getAuthTag();
   return Buffer.concat([MAGIC, Buffer.from([VERSION]), iv, tag, ciphertext]);
 }
 
-export function decrypt(blob: Buffer, derived: DerivedKey): Buffer {
+export function decrypt(blob: Buffer, derived: DerivedKey, aad?: Buffer): Buffer {
   if (blob.length < HEADER_LEN) throw new Error('cortex blob too short');
   if (!blob.subarray(0, MAGIC.length).equals(MAGIC)) {
     throw new Error('cortex blob has bad magic bytes');
@@ -41,6 +53,7 @@ export function decrypt(blob: Buffer, derived: DerivedKey): Buffer {
   const tag = blob.subarray(ivStart + IV_LEN, ivStart + IV_LEN + TAG_LEN);
   const ciphertext = blob.subarray(HEADER_LEN);
   const decipher = createDecipheriv('aes-256-gcm', derived.key, iv);
+  if (aad) decipher.setAAD(aad);
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
 }

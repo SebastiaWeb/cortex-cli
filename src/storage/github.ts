@@ -212,17 +212,26 @@ export async function fetchGitHubUser(token: string): Promise<string> {
   return data.login;
 }
 
-/** Create a private repo for the authenticated user. No-ops if it already exists. */
+function ghHeaders(token: string): Record<string, string> {
+  return {
+    Authorization: `Bearer ${token}`,
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+    'User-Agent': 'cortex-cli',
+  };
+}
+
+/**
+ * Create a private repo for the authenticated user. No-ops if it already
+ * exists AND is private. If it already exists and is public, throws instead
+ * of silently uploading encrypted content there — the ciphertext stays
+ * opaque, but file names, project structure, and timestamps would still be
+ * visible to anyone.
+ */
 export async function ensureGitHubRepo(token: string, repo: string): Promise<void> {
   const res = await fetch('https://api.github.com/user/repos', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      'User-Agent': 'cortex-cli',
-      'Content-Type': 'application/json',
-    },
+    headers: { ...ghHeaders(token), 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name: repo,
       private: true,
@@ -230,9 +239,26 @@ export async function ensureGitHubRepo(token: string, repo: string): Promise<voi
       auto_init: true, // creates initial commit so HEAD exists
     }),
   });
-  // 422 = repo already exists — not an error
-  if (!res.ok && res.status !== 422) {
+  if (res.ok) return; // freshly created — already private
+  if (res.status !== 422) {
     const text = await res.text();
     throw new Error(`Failed to create GitHub repo (${res.status}): ${text}`);
+  }
+
+  // 422 = repo already exists. Verify it's private before treating that as success.
+  const owner = await fetchGitHubUser(token);
+  const infoRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers: ghHeaders(token) });
+  if (!infoRes.ok) {
+    throw new Error(
+      `Repo "${owner}/${repo}" already exists but its visibility could not be verified (${infoRes.status}).`,
+    );
+  }
+  const info = (await infoRes.json()) as { private: boolean };
+  if (!info.private) {
+    throw new Error(
+      `Repo "${owner}/${repo}" already exists and is PUBLIC. Refusing to sync — even though content is ` +
+        'encrypted, file names, project structure, and timestamps would be visible to anyone. ' +
+        'Make the repo private, or run "cortex init" again with a different repo name.',
+    );
   }
 }

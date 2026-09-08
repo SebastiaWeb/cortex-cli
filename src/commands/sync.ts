@@ -1,7 +1,7 @@
 import { confirm } from '@inquirer/prompts';
 import { resolveBackend } from '../lib/backend-resolver.js';
 import { loadConfig } from '../lib/config.js';
-import { checksumSha256, decrypt, deriveKey, encrypt } from '../lib/crypto.js';
+import { checksumSha256, decrypt, deriveKeyFromSalt, encrypt } from '../lib/crypto.js';
 import { compress, decompress } from '../lib/compress.js';
 import { diffManifests, emptyManifest, type Manifest, saveManifest } from '../lib/manifest.js';
 import { readPassphrase } from '../lib/passphrase.js';
@@ -11,6 +11,7 @@ import { collectProjectFiles } from '../lib/project-content.js';
 import { findExtraMdFiles } from '../lib/claude-skills.js';
 import { readProjectConfig, writeProjectConfig } from '../lib/project-config.js';
 import { remoteManifestPath, remoteFilePath, localManifestPath } from '../lib/project-storage-paths.js';
+import { getOrCreateSalt } from '../lib/project-salt.js';
 
 function isSafeGitHubPath(path: string): boolean {
   return path.split('/').every(
@@ -23,16 +24,18 @@ export interface SyncOptions {
   cwd?: string;
   skipSecretsCheck?: boolean;
   redact?: boolean;
+  strict?: boolean;
 }
 
 export async function syncCommand(opts: SyncOptions = {}): Promise<void> {
   const cwd = opts.cwd ?? process.cwd();
   const config = await loadConfig();
   const passphrase = await readPassphrase();
-  const derived = deriveKey(passphrase, config.email);
 
   const { projectId, projectKey } = resolveProjectKey(cwd);
   const backend = resolveBackend(config, { target: opts.target });
+  const salt = await getOrCreateSalt(backend, projectKey);
+  const derived = deriveKeyFromSalt(passphrase, salt);
 
   console.log(`Project: ${projectId}`);
   console.log(`Sync target: ${backend.name}${opts.target ? ` (${opts.target})` : ''}\n`);
@@ -87,17 +90,25 @@ export async function syncCommand(opts: SyncOptions = {}): Promise<void> {
     local.files[path] = { checksum: checksumSha256(content), size: content.length, encryptedSize: 0 };
   }
 
-  if (!opts.skipSecretsCheck) {
+  if (!opts.skipSecretsCheck || opts.strict) {
     const findings: Array<{ file: string; pattern: string; preview: string }> = [];
     for (const [path, content] of contents) {
       for (const s of detectSecrets(content)) findings.push({ file: path, ...s });
     }
-    if (findings.length) {
+    if (findings.length && opts.strict) {
+      const list = findings.slice(0, 10).map((f) => `  - ${f.file}: ${f.pattern} (${f.preview})`).join('\n');
+      throw new Error(
+        `Refusing to sync — ${findings.length} potential secret(s) found:\n${list}` +
+          (findings.length > 10 ? `\n  …and ${findings.length - 10} more` : '') +
+          '\nRemove them, or run with --redact to scrub them before encrypting.',
+      );
+    }
+    if (findings.length && !opts.skipSecretsCheck) {
       console.warn(`\n⚠ Found ${findings.length} potential secrets:`);
       for (const f of findings.slice(0, 10)) console.warn(`  - ${f.file}: ${f.pattern} (${f.preview})`);
       if (findings.length > 10) console.warn(`  …and ${findings.length - 10} more`);
       console.warn('Files are encrypted before upload, but consider removing real secrets.');
-      console.warn('Use --skip-secrets-check to bypass.\n');
+      console.warn('Use --skip-secrets-check to bypass, or --strict to block instead of warn.\n');
     }
   }
 
@@ -105,7 +116,7 @@ export async function syncCommand(opts: SyncOptions = {}): Promise<void> {
   let remote: Manifest = emptyManifest('claude-code');
   if (await backend.has(manifestPath)) {
     const enc = await backend.read(manifestPath);
-    remote = JSON.parse(decompress(decrypt(enc, derived)).toString('utf-8')) as Manifest;
+    remote = JSON.parse(decompress(decrypt(enc, derived, Buffer.from(manifestPath))).toString('utf-8')) as Manifest;
   }
 
   const diff = diffManifests(local, remote);
@@ -119,9 +130,10 @@ export async function syncCommand(opts: SyncOptions = {}): Promise<void> {
   for (const path of toUpload) {
     if (!isSafeGitHubPath(path)) { skipped++; continue; }
     const content = contents.get(path)!;
-    const enc = encrypt(compress(content), derived);
+    const destPath = remoteFilePath(projectKey, path);
+    const enc = encrypt(compress(content), derived, Buffer.from(destPath));
     local.files[path].encryptedSize = enc.length;
-    uploads.push({ path: remoteFilePath(projectKey, path), content: enc });
+    uploads.push({ path: destPath, content: enc });
   }
   if (skipped > 0) {
     console.warn(`  ⚠ Skipped ${skipped} file(s) with paths incompatible with GitHub (control chars, .git, etc.)`);
@@ -130,7 +142,7 @@ export async function syncCommand(opts: SyncOptions = {}): Promise<void> {
     local.files[path].encryptedSize = remote.files[path].encryptedSize;
   }
 
-  const encryptedManifest = encrypt(compress(Buffer.from(JSON.stringify(local), 'utf-8')), derived);
+  const encryptedManifest = encrypt(compress(Buffer.from(JSON.stringify(local), 'utf-8')), derived, Buffer.from(manifestPath));
   uploads.push({ path: manifestPath, content: encryptedManifest });
 
   if (uploads.length > 0) console.log(`  Uploading ${uploads.length} file(s)…`);

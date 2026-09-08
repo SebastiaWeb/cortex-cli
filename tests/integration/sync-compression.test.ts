@@ -2,11 +2,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { decrypt, deriveKey } from '../../src/lib/crypto.js';
+import { decrypt, deriveKeyFromSalt } from '../../src/lib/crypto.js';
 import { decompress } from '../../src/lib/compress.js';
 import { LocalFilesystemBackend } from '../../src/storage/local.js';
 import { remoteFilePath } from '../../src/lib/project-storage-paths.js';
 import { resolveProjectKey } from '../../src/lib/project-identifier.js';
+import { getOrCreateSalt } from '../../src/lib/project-salt.js';
 import { localSessionsDir } from '../../src/lib/team-sessions.js';
 import type { syncCommand as SyncCommandFn } from '../../src/commands/sync.js';
 import type { pullCommand as PullCommandFn } from '../../src/commands/pull.js';
@@ -20,7 +21,6 @@ describe('cortex sync compresses before encrypting (and pull decompresses back)'
   let pullCommand: typeof PullCommandFn;
   const email = 'dev@example.com';
   const passphrase = 'correct-horse-battery-staple';
-  const derived = deriveKey(passphrase, email);
   // Real JSONL sessions are highly repetitive — a big enough sample proves compression happened.
   const sessionLine = `{"cwd":"/home/alice/myapp","type":"user","uuid":"a1b2c3d4","message":"same line repeated"}\n`;
   const bigSession = sessionLine.repeat(500); // ~40KB of very repetitive text
@@ -65,8 +65,11 @@ describe('cortex sync compresses before encrypting (and pull decompresses back)'
 
     const { projectKey } = resolveProjectKey(project);
     const backend = new LocalFilesystemBackend(remote);
-    const blob = await backend.read(remoteFilePath(projectKey, 'sessions/big.jsonl'));
-    const decrypted = decrypt(blob, derived);
+    const salt = await getOrCreateSalt(backend, projectKey);
+    const derived = deriveKeyFromSalt(passphrase, salt);
+    const path = remoteFilePath(projectKey, 'sessions/big.jsonl');
+    const blob = await backend.read(path);
+    const decrypted = decrypt(blob, derived, Buffer.from(path));
 
     // Decrypted-but-not-decompressed bytes must NOT be the readable JSONL —
     // proves compress() actually ran before encrypt().

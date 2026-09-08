@@ -6,6 +6,7 @@ import { setTokenCommand } from './commands/set-token.js';
 import { mcpCommand } from './commands/mcp.js';
 import { setupMcpCommand } from './commands/setup-mcp.js';
 import { pullCommand } from './commands/pull.js';
+import { rekeyCommand } from './commands/rekey.js';
 import { statusCommand } from './commands/status.js';
 import { syncCommand } from './commands/sync.js';
 import { teamInitCommand } from './commands/team/init.js';
@@ -39,6 +40,7 @@ program
   .option('--target <path>', 'Override storage to a local folder (overrides config)')
   .option('--skip-secrets-check', 'Skip the regex scan for API keys before encrypting')
   .option('--redact', 'Replace detected secrets (API keys, tokens, private keys) with a placeholder before encrypting')
+  .option('--strict', 'Refuse to sync if potential secrets are found, instead of just warning')
   .action(syncCommand);
 
 program
@@ -52,6 +54,12 @@ program
   .description('Show what is out of sync between this project and your personal storage')
   .option('--target <path>', 'Override storage to a local folder (overrides config)')
   .action(statusCommand);
+
+program
+  .command('rekey')
+  .description('Rotate this project\'s encryption salt and re-encrypt everything under a new derived key')
+  .option('--target <path>', 'Override storage to a local folder (overrides config)')
+  .action((opts) => void rekeyCommand(opts));
 
 program
   .command('convert <skill-file>')

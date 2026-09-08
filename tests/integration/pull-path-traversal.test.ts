@@ -2,12 +2,13 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { checksumSha256, deriveKey, encrypt } from '../../src/lib/crypto.js';
+import { checksumSha256, deriveKeyFromSalt, encrypt } from '../../src/lib/crypto.js';
 import { compress } from '../../src/lib/compress.js';
 import { emptyManifest, type Manifest } from '../../src/lib/manifest.js';
 import { LocalFilesystemBackend } from '../../src/storage/local.js';
 import { remoteManifestPath, remoteFilePath } from '../../src/lib/project-storage-paths.js';
 import { resolveProjectKey } from '../../src/lib/project-identifier.js';
+import { getOrCreateSalt } from '../../src/lib/project-salt.js';
 import type { pullCommand as PullCommandFn } from '../../src/commands/pull.js';
 
 // Reproduces, end-to-end through the real pullCommand, the manifest-controlled
@@ -23,7 +24,6 @@ describe('cortex pull rejects path traversal from a malicious remote manifest', 
   let pullCommand: typeof PullCommandFn;
   const email = 'dev@example.com';
   const passphrase = 'correct-horse-battery-staple';
-  const derived = deriveKey(passphrase, email);
 
   beforeEach(async () => {
     claudeHome = await mkdtemp(join(tmpdir(), 'cortex-home-'));
@@ -56,11 +56,15 @@ describe('cortex pull rejects path traversal from a malicious remote manifest', 
   async function seedMaliciousManifest(entryPath: string): Promise<void> {
     const { projectKey } = resolveProjectKey(project);
     const backend = new LocalFilesystemBackend(remote);
+    const salt = await getOrCreateSalt(backend, projectKey);
+    const derived = deriveKeyFromSalt(passphrase, salt);
     const payload = Buffer.from('pwned-by-manifest\n');
     const manifest: Manifest = { ...emptyManifest('claude-code'), originalPath: project };
     manifest.files[entryPath] = { checksum: checksumSha256(payload), size: payload.length, encryptedSize: 0 };
-    await backend.write(remoteFilePath(projectKey, entryPath), encrypt(compress(payload), derived));
-    await backend.write(remoteManifestPath(projectKey), encrypt(compress(Buffer.from(JSON.stringify(manifest))), derived));
+    const filePath = remoteFilePath(projectKey, entryPath);
+    const manifestPath = remoteManifestPath(projectKey);
+    await backend.write(filePath, encrypt(compress(payload), derived, Buffer.from(filePath)));
+    await backend.write(manifestPath, encrypt(compress(Buffer.from(JSON.stringify(manifest))), derived, Buffer.from(manifestPath)));
   }
 
   it('rejects a malicious docs/ entry instead of writing outside the project', async () => {

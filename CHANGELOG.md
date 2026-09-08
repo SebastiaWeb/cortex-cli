@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Security
+
+- **Encryption is now bound to storage path (AAD).** `encrypt()`/`decrypt()` (`src/lib/crypto.ts`) take the destination path as AES-GCM additional authenticated data. A ciphertext moved or swapped between paths — e.g. two projects sharing a backend, or a manifest entry pointed at the wrong blob — now fails to decrypt instead of silently returning bytes that don't belong there.
+- **Random per-project salt, not `SHA256(email)`.** Key derivation used the same deterministic salt every sync — anyone who knew (or guessed) your email could precompute it. `getOrCreateSalt()` (`src/lib/project-salt.ts`) now generates a random 16-byte salt on first sync and stores it unencrypted next to the manifest (`manifest/<projectKey>.salt`); it isn't secret, it just has to be shared so every machine derives the same key from the same passphrase. `deriveKeyFromSalt()` replaces the old email-only `deriveKey()` call in `sync`/`pull`/`status`.
+- **`cortex rekey`**: rotates a project's salt and re-encrypts every file under the new derived key, in one atomic batch write (`writeMany`). Re-encryption happens at the compressed-ciphertext layer — decrypt with the old key, encrypt the same bytes with the new one — so plaintext is never touched. Use it if you suspect your passphrase or backend has been exposed.
+- **`cortex sync --strict`**: refuses to sync (throws) if the secrets scanner finds anything, instead of just warning. Combine with `--redact` to scrub first and sync anyway.
+- **`ensureGitHubRepo` now checks visibility before treating "repo already exists" as success.** Creating a repo returns 422 if one with that name already exists — the old code treated any 422 as fine. If that existing repo turns out to be public, `cortex init`/`sync` now throws instead of uploading encrypted backups to it: ciphertext stays opaque, but file names, project structure, and timestamps would still be exposed.
+- Fixed `cortex status`: it was never updated to `decompress()` remote manifests when compression was added in 0.5.1, so it would have thrown a JSON parse error on gzip bytes the first time anyone ran it against a real backend.
+
+## [0.5.1] - 2026-08-30
+
 ### Fixed
 
 - **The GitHub backend now works with sessions over 1MB.** `cortex sync`/`pull`/`status` previously used the Contents API, which omits the `content` field entirely for files over 1MB — `cortex pull`/`status` silently failed or corrupted state for any session that size. On this machine, 7 of 16 real sessions were already over the limit (largest: 46MB). Fixed by moving reads and writes to the Git Data API (blobs + trees + commits) instead of the Contents API. `GitHubBackend.read()` now fetches by blob sha (`GET /git/blobs/{sha}`), which has no such limit.

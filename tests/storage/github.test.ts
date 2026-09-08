@@ -300,14 +300,36 @@ describe('fetchGitHubUser', () => {
 describe('ensureGitHubRepo', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('resolves on 201 (created)', async () => {
-    vi.stubGlobal('fetch', mockFetch([{ status: 201, body: { name: 'cortex-backup' } }]));
+  it('resolves on 201 (created) without checking visibility', async () => {
+    const { fn, calls } = mockFetchRoute([
+      { method: 'POST', test: (u) => u.endsWith('/user/repos'), status: 201, body: { name: 'cortex-backup' } },
+    ]);
+    vi.stubGlobal('fetch', fn);
+    await expect(ensureGitHubRepo('ghp_test', 'cortex-backup')).resolves.toBeUndefined();
+    expect(calls).toHaveLength(1); // no follow-up GET — a freshly created repo is already private
+  });
+
+  it('resolves on 422 when the existing repo is already private', async () => {
+    const { fn } = mockFetchRoute([
+      { method: 'POST', test: (u) => u.endsWith('/user/repos'), status: 422, body: { message: 'already exists' } },
+      { method: 'GET', test: (u) => u.endsWith('/user'), body: { login: 'testuser' } },
+      { method: 'GET', test: (u) => u.endsWith('/repos/testuser/cortex-backup'), body: { private: true } },
+    ]);
+    vi.stubGlobal('fetch', fn);
     await expect(ensureGitHubRepo('ghp_test', 'cortex-backup')).resolves.toBeUndefined();
   });
 
-  it('resolves on 422 (repo already exists)', async () => {
-    vi.stubGlobal('fetch', mockFetch([{ status: 422, body: { message: 'already exists' } }]));
-    await expect(ensureGitHubRepo('ghp_test', 'cortex-backup')).resolves.toBeUndefined();
+  it('throws on 422 when the existing repo is public', async () => {
+    // The bug this closes: cortex silently uploaded encrypted content to a
+    // pre-existing PUBLIC repo. Content stays encrypted, but file names,
+    // project structure, and timestamps would still leak.
+    const { fn } = mockFetchRoute([
+      { method: 'POST', test: (u) => u.endsWith('/user/repos'), status: 422, body: { message: 'already exists' } },
+      { method: 'GET', test: (u) => u.endsWith('/user'), body: { login: 'testuser' } },
+      { method: 'GET', test: (u) => u.endsWith('/repos/testuser/cortex-backup'), body: { private: false } },
+    ]);
+    vi.stubGlobal('fetch', fn);
+    await expect(ensureGitHubRepo('ghp_test', 'cortex-backup')).rejects.toThrow(/public/i);
   });
 
   it('throws on other errors', async () => {

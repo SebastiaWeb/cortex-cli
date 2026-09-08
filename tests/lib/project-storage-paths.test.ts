@@ -5,6 +5,7 @@ import {
   remoteManifestPath,
   remoteFilePath,
   localManifestPath,
+  remoteSaltPath,
 } from '../../src/lib/project-storage-paths.js';
 
 describe('remoteManifestPath', () => {
@@ -18,6 +19,12 @@ describe('remoteFilePath', () => {
     expect(remoteFilePath('github-com-org-repo', 'sessions/abc.jsonl')).toBe(
       'files/projects/github-com-org-repo/sessions/abc.jsonl',
     );
+  });
+});
+
+describe('remoteSaltPath', () => {
+  it('namespaces the salt under manifest/<projectKey>.salt, unencrypted, sibling to the manifest', () => {
+    expect(remoteSaltPath('github-com-org-repo')).toBe('manifest/github-com-org-repo.salt');
   });
 });
 

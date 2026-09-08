@@ -1,13 +1,14 @@
 import { join } from 'node:path';
 import { resolveBackend } from '../lib/backend-resolver.js';
 import { loadConfig } from '../lib/config.js';
-import { checksumSha256, decrypt, deriveKey } from '../lib/crypto.js';
+import { checksumSha256, decrypt, deriveKeyFromSalt } from '../lib/crypto.js';
 import { decompress } from '../lib/compress.js';
 import { diffManifests, emptyManifest, loadManifest, type Manifest, saveManifest } from '../lib/manifest.js';
 import { readPassphrase } from '../lib/passphrase.js';
 import { resolveProjectKey } from '../lib/project-identifier.js';
 import { placeSessionFiles } from '../lib/project-content.js';
 import { remoteManifestPath, remoteFilePath, localManifestPath } from '../lib/project-storage-paths.js';
+import { getOrCreateSalt } from '../lib/project-salt.js';
 import {
   readFileFromPath,
   writeFileToPath,
@@ -30,7 +31,6 @@ export async function pullCommand(opts: PullOptions = {}): Promise<PullResult> {
   const cwd = opts.cwd ?? process.cwd();
   const config = await loadConfig();
   const passphrase = await readPassphrase();
-  const derived = deriveKey(passphrase, config.email);
 
   const { projectId, projectKey } = resolveProjectKey(cwd);
   const backend = resolveBackend(config, { target: opts.target });
@@ -42,8 +42,10 @@ export async function pullCommand(opts: PullOptions = {}): Promise<PullResult> {
   if (!(await backend.has(manifestPath))) {
     throw new Error('No synced data found for this project. Run "cortex sync" first (from any machine).');
   }
+  const salt = await getOrCreateSalt(backend, projectKey);
+  const derived = deriveKeyFromSalt(passphrase, salt);
   const enc = await backend.read(manifestPath);
-  const remote = JSON.parse(decompress(decrypt(enc, derived)).toString('utf-8')) as Manifest;
+  const remote = JSON.parse(decompress(decrypt(enc, derived, Buffer.from(manifestPath))).toString('utf-8')) as Manifest;
 
   const local: Manifest = (await loadManifest(localManifestPath(projectKey))) ?? emptyManifest('claude-code');
 
@@ -56,8 +58,9 @@ export async function pullCommand(opts: PullOptions = {}): Promise<PullResult> {
   const downloaded = new Map<string, Buffer>();
   let count = 0;
   for (const path of toPull) {
-    const blob = await backend.read(remoteFilePath(projectKey, path));
-    const content = decompress(decrypt(blob, derived));
+    const srcPath = remoteFilePath(projectKey, path);
+    const blob = await backend.read(srcPath);
+    const content = decompress(decrypt(blob, derived, Buffer.from(srcPath)));
     const expected = remote.files[path].checksum;
     const actual = checksumSha256(content);
     if (expected !== actual) {
