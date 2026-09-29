@@ -6,7 +6,6 @@ import {
   readSkillsFromDir,
   writeSkillToDir,
   readFileFromPath,
-  writeFileToPath,
   injectCortexPathBlock,
   stripCortexPathBlock,
 } from '../../src/lib/claude-skills.js';

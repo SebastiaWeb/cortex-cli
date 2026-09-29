@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.7.0] - 2026-09-28
+
+### Added
+
+- **`cortex doctor`**: diagnoses your local setup without touching any content — config file present and valid, config file permissions (warns if looser than 600), storage backend reachable (GitHub: validates the token via `/user` then probes the repo; local: verifies the target directory exists), `CORTEX_PASSPHRASE` set (warns, doesn't fail, since sync/pull/status can still prompt for it), and configured tools still present on this machine.
+- **`cortex sync --dry-run`**: prints the added/modified/removed diff and returns — nothing is encrypted, uploaded, deleted, or written to the local manifest. One exception: on the very first contact with a project that's never been synced, it still creates that project's (unencrypted, idempotent) salt file — needed either way to decrypt an existing remote manifest for an accurate diff, and reused by the next real sync.
+- **Retry with exponential backoff on the GitHub API** (`src/lib/http-retry.ts`, wired into every `fetch` in `src/storage/github.ts`). Retries on 429, 5xx, and GitHub's rate-limited 403 (`X-RateLimit-Remaining: 0`) — not on 404/401/a permission 403, which won't change on retry. 3 retries, 300ms base delay, doubling each time.
+- ESLint (flat config, `typescript-eslint` recommended) wired into `npm run lint` and CI, running before typecheck/test/build on every push and PR.
+
+### Fixed
+
+- **MCP server reported a hardcoded `version: '0.1.0'`** regardless of the actual published version — now reads it from `package.json` the same way `cli.ts` already did for `cortex --version`.
+- **The Windows `GIT_ASKPASS` script never escaped the token.** `withAskpass()`'s `.cmd` branch interpolated the raw PAT directly into the batch file body — `%`, `&`, `|`, `<`, `>`, `^`, and `"` are all cmd.exe metacharacters, none of which were escaped (the Unix `.sh` branch already single-quote-escaped correctly). Fixed by extracting script generation into `buildAskpassScript()` and, on Windows, passing the token through an env var (`CORTEX_ASKPASS_TOKEN`) referenced as `%CORTEX_ASKPASS_TOKEN%` instead of ever writing it into the script text — sidesteps the escaping problem entirely rather than trying to enumerate every cmd.exe special character.
+
 ## [0.6.0] - 2026-09-07
 
 ### Security

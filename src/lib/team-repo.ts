@@ -48,6 +48,43 @@ function throwGitError(op: string, stderr: string): never {
   throw new Error(`git ${op} failed: ${stderr}`);
 }
 
+export interface AskpassScript {
+  filename: string;
+  content: string;
+  mode?: number;
+  /** Extra env vars the script needs (e.g. the token on Windows, passed by reference — never interpolated into the script body). */
+  env?: Record<string, string>;
+}
+
+/**
+ * Builds the GIT_ASKPASS script content for either platform. Pure function —
+ * no filesystem access — so the escaping behavior can be tested directly
+ * without needing cmd.exe or sh on the test machine.
+ *
+ * The Windows branch never interpolates the raw token into the .cmd file: cmd.exe
+ * treats %, &, |, <, >, ^, " specially, and none of that was escaped before — a
+ * token containing any of them would have broken the script or, worse, let a
+ * carefully crafted token inject a command. Passing the token through an env var
+ * and referencing it as %CORTEX_ASKPASS_TOKEN% sidesteps the whole problem: the
+ * script body is a fixed, safe literal regardless of what the token contains.
+ */
+export function buildAskpassScript(token: string, isWin: boolean): AskpassScript {
+  if (isWin) {
+    return {
+      filename: 'askpass.cmd',
+      content: '@echo off\r\necho %CORTEX_ASKPASS_TOKEN%\r\n',
+      env: { CORTEX_ASKPASS_TOKEN: token },
+    };
+  }
+  const safe = token.replace(/'/g, "'\\''");
+  // Respond to username prompts with a placeholder; serve the PAT for password prompts.
+  return {
+    filename: 'askpass.sh',
+    content: `#!/bin/sh\ncase "$1" in\n  *[Uu]sername*) echo 'x-token-auth' ;;\n  *) printf '%s\\n' '${safe}' ;;\nesac\n`,
+    mode: 0o700,
+  };
+}
+
 /**
  * Runs `fn` with a GIT_ASKPASS env that serves `token` as the credential.
  * The token lives only in a temp script file (mode 700, deleted in finally).
@@ -56,22 +93,12 @@ function throwGitError(op: string, stderr: string): never {
 function withAskpass(token: string, fn: (env: NodeJS.ProcessEnv) => void): void {
   const tmpDir = mkdtempSync(join(tmpdir(), 'cortex-askpass-'));
   const isWin = process.platform === 'win32';
-  const scriptPath = join(tmpDir, isWin ? 'askpass.cmd' : 'askpass.sh');
-
-  if (isWin) {
-    writeFileSync(scriptPath, `@echo off\r\necho ${token}\r\n`);
-  } else {
-    const safe = token.replace(/'/g, "'\\''");
-    // Respond to username prompts with a placeholder; serve the PAT for password prompts.
-    writeFileSync(
-      scriptPath,
-      `#!/bin/sh\ncase "$1" in\n  *[Uu]sername*) echo 'x-token-auth' ;;\n  *) printf '%s\\n' '${safe}' ;;\nesac\n`,
-      { mode: 0o700 },
-    );
-  }
+  const script = buildAskpassScript(token, isWin);
+  const scriptPath = join(tmpDir, script.filename);
+  writeFileSync(scriptPath, script.content, script.mode !== undefined ? { mode: script.mode } : undefined);
 
   try {
-    fn({ ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: scriptPath });
+    fn({ ...process.env, ...script.env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: scriptPath });
   } finally {
     rmSync(tmpDir, { recursive: true, force: true });
   }

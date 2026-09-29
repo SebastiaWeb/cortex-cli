@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module';
 import { Command } from 'commander';
 import { convertCommand, type ConvertTarget } from './commands/convert.js';
+import { doctorCommand } from './commands/doctor.js';
 import { initCommand } from './commands/init.js';
 import { setTokenCommand } from './commands/set-token.js';
 import { mcpCommand } from './commands/mcp.js';
@@ -41,6 +42,7 @@ program
   .option('--skip-secrets-check', 'Skip the regex scan for API keys before encrypting')
   .option('--redact', 'Replace detected secrets (API keys, tokens, private keys) with a placeholder before encrypting')
   .option('--strict', 'Refuse to sync if potential secrets are found, instead of just warning')
+  .option('--dry-run', 'Show what would be uploaded, changed, or deleted without doing it')
   .action(syncCommand);
 
 program
@@ -60,6 +62,11 @@ program
   .description('Rotate this project\'s encryption salt and re-encrypt everything under a new derived key')
   .option('--target <path>', 'Override storage to a local folder (overrides config)')
   .action((opts) => void rekeyCommand(opts));
+
+program
+  .command('doctor')
+  .description('Diagnose your cortex configuration: config file, storage backend, passphrase, detected tools')
+  .action(() => void doctorCommand());
 
 program
   .command('convert <skill-file>')

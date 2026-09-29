@@ -1,3 +1,4 @@
+import { fetchWithRetry } from '../lib/http-retry.js';
 import type { IStorageBackend, RemoteFile } from './types.js';
 
 interface GHContentResponse {
@@ -53,7 +54,7 @@ export class GitHubBackend implements IStorageBackend {
   }
 
   private async getSha(path: string): Promise<string | null> {
-    const res = await fetch(this.url(path), { headers: this.headers });
+    const res = await fetchWithRetry(this.url(path), { headers: this.headers });
     if (res.status === 404) return null;
     if (!res.ok) throw new Error(`GitHub API error ${res.status} on GET ${path}`);
     const data = (await res.json()) as GHContentResponse;
@@ -61,7 +62,7 @@ export class GitHubBackend implements IStorageBackend {
   }
 
   async has(path: string): Promise<boolean> {
-    const res = await fetch(this.url(path), { headers: this.headers });
+    const res = await fetchWithRetry(this.url(path), { headers: this.headers });
     if (res.status === 404) return false;
     if (!res.ok) throw new Error(`GitHub API error ${res.status} on has(${path})`);
     return true;
@@ -76,7 +77,7 @@ export class GitHubBackend implements IStorageBackend {
   async read(path: string): Promise<Buffer> {
     const sha = await this.getSha(path);
     if (!sha) throw new Error(`GitHub read failed (404): ${path}`);
-    const res = await fetch(`${this.apiBase}/git/blobs/${sha}`, { headers: this.headers });
+    const res = await fetchWithRetry(`${this.apiBase}/git/blobs/${sha}`, { headers: this.headers });
     if (!res.ok) throw new Error(`GitHub read failed (${res.status}): ${path}`);
     const data = (await res.json()) as GHBlobResponse;
     return Buffer.from(data.content.replace(/\n/g, ''), 'base64');
@@ -122,28 +123,28 @@ export class GitHubBackend implements IStorageBackend {
   }
 
   private async getDefaultBranch(): Promise<string> {
-    const res = await fetch(this.apiBase, { headers: this.headers });
+    const res = await fetchWithRetry(this.apiBase, { headers: this.headers });
     if (!res.ok) throw new Error(`GitHub API error ${res.status} fetching repo info`);
     const data = (await res.json()) as { default_branch: string };
     return data.default_branch;
   }
 
   private async getRefSha(branch: string): Promise<string> {
-    const res = await fetch(`${this.apiBase}/git/refs/heads/${branch}`, { headers: this.headers });
+    const res = await fetchWithRetry(`${this.apiBase}/git/refs/heads/${branch}`, { headers: this.headers });
     if (!res.ok) throw new Error(`GitHub API error ${res.status} fetching ref heads/${branch}`);
     const data = (await res.json()) as { object: { sha: string } };
     return data.object.sha;
   }
 
   private async getCommitTreeSha(commitSha: string): Promise<string> {
-    const res = await fetch(`${this.apiBase}/git/commits/${commitSha}`, { headers: this.headers });
+    const res = await fetchWithRetry(`${this.apiBase}/git/commits/${commitSha}`, { headers: this.headers });
     if (!res.ok) throw new Error(`GitHub API error ${res.status} fetching commit ${commitSha}`);
     const data = (await res.json()) as { tree: { sha: string } };
     return data.tree.sha;
   }
 
   private async createBlob(content: Buffer): Promise<string> {
-    const res = await fetch(`${this.apiBase}/git/blobs`, {
+    const res = await fetchWithRetry(`${this.apiBase}/git/blobs`, {
       method: 'POST',
       headers: { ...this.headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: content.toString('base64'), encoding: 'base64' }),
@@ -160,7 +161,7 @@ export class GitHubBackend implements IStorageBackend {
     entries: Array<{ path: string; mode: string; type: string; sha: string | null }>,
     message: string,
   ): Promise<void> {
-    const treeRes = await fetch(`${this.apiBase}/git/trees`, {
+    const treeRes = await fetchWithRetry(`${this.apiBase}/git/trees`, {
       method: 'POST',
       headers: { ...this.headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ base_tree: baseTreeSha, tree: entries }),
@@ -168,7 +169,7 @@ export class GitHubBackend implements IStorageBackend {
     if (!treeRes.ok) throw new Error(`GitHub API error ${treeRes.status} creating tree`);
     const { sha: newTreeSha } = (await treeRes.json()) as { sha: string };
 
-    const commitRes = await fetch(`${this.apiBase}/git/commits`, {
+    const commitRes = await fetchWithRetry(`${this.apiBase}/git/commits`, {
       method: 'POST',
       headers: { ...this.headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ message, tree: newTreeSha, parents: [parentSha] }),
@@ -176,7 +177,7 @@ export class GitHubBackend implements IStorageBackend {
     if (!commitRes.ok) throw new Error(`GitHub API error ${commitRes.status} creating commit`);
     const { sha: newCommitSha } = (await commitRes.json()) as { sha: string };
 
-    const refRes = await fetch(`${this.apiBase}/git/refs/heads/${branch}`, {
+    const refRes = await fetchWithRetry(`${this.apiBase}/git/refs/heads/${branch}`, {
       method: 'PATCH',
       headers: { ...this.headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ sha: newCommitSha }),
@@ -185,7 +186,7 @@ export class GitHubBackend implements IStorageBackend {
   }
 
   async list(): Promise<RemoteFile[]> {
-    const res = await fetch(`${this.apiBase}/git/trees/HEAD?recursive=1`, {
+    const res = await fetchWithRetry(`${this.apiBase}/git/trees/HEAD?recursive=1`, {
       headers: this.headers,
     });
     if (res.status === 404 || res.status === 409) return []; // empty repo / no HEAD
@@ -199,7 +200,7 @@ export class GitHubBackend implements IStorageBackend {
 
 /** Fetch the authenticated user's GitHub login. */
 export async function fetchGitHubUser(token: string): Promise<string> {
-  const res = await fetch('https://api.github.com/user', {
+  const res = await fetchWithRetry('https://api.github.com/user', {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: 'application/vnd.github+json',
@@ -229,7 +230,7 @@ function ghHeaders(token: string): Record<string, string> {
  * visible to anyone.
  */
 export async function ensureGitHubRepo(token: string, repo: string): Promise<void> {
-  const res = await fetch('https://api.github.com/user/repos', {
+  const res = await fetchWithRetry('https://api.github.com/user/repos', {
     method: 'POST',
     headers: { ...ghHeaders(token), 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -247,7 +248,7 @@ export async function ensureGitHubRepo(token: string, repo: string): Promise<voi
 
   // 422 = repo already exists. Verify it's private before treating that as success.
   const owner = await fetchGitHubUser(token);
-  const infoRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers: ghHeaders(token) });
+  const infoRes = await fetchWithRetry(`https://api.github.com/repos/${owner}/${repo}`, { headers: ghHeaders(token) });
   if (!infoRes.ok) {
     throw new Error(
       `Repo "${owner}/${repo}" already exists but its visibility could not be verified (${infoRes.status}).`,

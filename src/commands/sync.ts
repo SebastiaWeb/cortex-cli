@@ -15,7 +15,13 @@ import { getOrCreateSalt } from '../lib/project-salt.js';
 
 function isSafeGitHubPath(path: string): boolean {
   return path.split('/').every(
-    (c) => c.length > 0 && c !== '.' && c !== '..' && c !== '.git' && !/[\x00-\x1f\x7f]/.test(c),
+    (c) =>
+      c.length > 0 &&
+      c !== '.' &&
+      c !== '..' &&
+      c !== '.git' &&
+      // eslint-disable-next-line no-control-regex -- intentional: rejecting control chars in path segments
+      !/[\x00-\x1f\x7f]/.test(c),
   );
 }
 
@@ -25,6 +31,7 @@ export interface SyncOptions {
   skipSecretsCheck?: boolean;
   redact?: boolean;
   strict?: boolean;
+  dryRun?: boolean;
 }
 
 export async function syncCommand(opts: SyncOptions = {}): Promise<void> {
@@ -34,6 +41,11 @@ export async function syncCommand(opts: SyncOptions = {}): Promise<void> {
 
   const { projectId, projectKey } = resolveProjectKey(cwd);
   const backend = resolveBackend(config, { target: opts.target });
+  // Note: even in --dry-run, this creates the project's salt file on first
+  // contact with a project that's never been synced — it's the one write a
+  // dry run can still cause. Harmless (unencrypted, idempotent, reused by the
+  // next real sync) and unavoidable here: decrypting an existing remote
+  // manifest for an accurate diff needs the same salt either way.
   const salt = await getOrCreateSalt(backend, projectKey);
   const derived = deriveKeyFromSalt(passphrase, salt);
 
@@ -124,6 +136,14 @@ export async function syncCommand(opts: SyncOptions = {}): Promise<void> {
     `Diff — added: ${diff.added.length}, modified: ${diff.modified.length}, removed: ${diff.removed.length}, unchanged: ${diff.unchanged.length}`,
   );
 
+  if (opts.dryRun) {
+    for (const path of diff.added) console.log(`  + ${path}`);
+    for (const path of diff.modified) console.log(`  ~ ${path}`);
+    for (const path of diff.removed) console.log(`  - ${path}`);
+    console.log('\nDry run — nothing was uploaded, deleted, or saved locally.');
+    return;
+  }
+
   const toUpload = [...diff.added, ...diff.modified];
   const uploads: Array<{ path: string; content: Buffer }> = [];
   let skipped = 0;
@@ -149,7 +169,7 @@ export async function syncCommand(opts: SyncOptions = {}): Promise<void> {
   try {
     await backend.writeMany(uploads);
   } catch (e) {
-    throw new Error(`Upload failed: ${(e as Error).message}`);
+    throw new Error(`Upload failed: ${(e as Error).message}`, { cause: e });
   }
 
   if (diff.removed.length > 0) {

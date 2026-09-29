@@ -333,7 +333,10 @@ describe('ensureGitHubRepo', () => {
   });
 
   it('throws on other errors', async () => {
-    vi.stubGlobal('fetch', mockFetch([{ status: 500, body: { message: 'server error' } }]));
+    // A 500 is retried (fetchWithRetry) — queue enough failing responses to
+    // exhaust the default retries instead of falling through to mockFetch's
+    // "unspecified calls succeed with 200" default.
+    vi.stubGlobal('fetch', mockFetch(Array(4).fill({ status: 500, body: { message: 'server error' } })));
     await expect(ensureGitHubRepo('ghp_test', 'cortex-backup')).rejects.toThrow('500');
-  });
+  }, 10000);
 });

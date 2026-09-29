@@ -3,7 +3,40 @@ import { mkdtemp, readFile, rm, mkdir, access } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { assertSafeRepoUrl, cloneTeamRepo, pullTeamRepo, commitAndPush, hasLocalClone } from '../../src/lib/team-repo.js';
+import {
+  assertSafeRepoUrl, cloneTeamRepo, pullTeamRepo, commitAndPush, hasLocalClone, buildAskpassScript,
+} from '../../src/lib/team-repo.js';
+
+describe('buildAskpassScript', () => {
+  // GitHub PATs don't contain batch metacharacters in practice, but a script
+  // that only works for well-behaved input isn't actually escaped — these
+  // characters are exactly what cmd.exe treats specially (%var% expansion,
+  // &|<> redirection/chaining, ^ escape, " quoting).
+  const nasty = 'ghp_a%b&c|d<e>f^g"h';
+
+  it('on Windows, never embeds the raw token literally in the script body', () => {
+    const script = buildAskpassScript(nasty, true);
+    expect(script.content).not.toContain(nasty);
+  });
+
+  it('on Windows, passes the token through an env var instead', () => {
+    const script = buildAskpassScript(nasty, true);
+    expect(script.env?.CORTEX_ASKPASS_TOKEN).toBe(nasty);
+    expect(script.content).toContain('%CORTEX_ASKPASS_TOKEN%');
+  });
+
+  it('on Windows, uses a .cmd filename', () => {
+    const script = buildAskpassScript(nasty, true);
+    expect(script.filename).toBe('askpass.cmd');
+  });
+
+  it('on Unix, still single-quote-escapes the token inline (existing behavior)', () => {
+    const script = buildAskpassScript("it's-a-token", false);
+    expect(script.content).toContain(String.raw`it'\''s-a-token`);
+    expect(script.filename).toBe('askpass.sh');
+    expect(script.mode).toBe(0o700);
+  });
+});
 
 describe('assertSafeRepoUrl', () => {
   it('accepts a normal https GitHub URL', () => {

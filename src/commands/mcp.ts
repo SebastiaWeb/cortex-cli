@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
@@ -7,6 +8,13 @@ import { initNonInteractive } from './init.js';
 import { pullCommand } from './pull.js';
 import { statusCommand } from './status.js';
 import { syncCommand } from './sync.js';
+
+const require = createRequire(import.meta.url);
+// Path is relative to the bundled dist/cli.js, not this source file — tsup
+// collapses everything into one file, so this resolves the same way cli.ts's
+// own package.json require does, not '../../package.json' as this file's
+// own two-levels-deep source location would suggest.
+const { version: cortexVersion } = require('../package.json') as { version: string };
 
 // Permanently redirect console.log to stderr — stdout is the MCP JSON-RPC channel.
 const logToStderr = (...args: unknown[]) =>
@@ -47,7 +55,7 @@ function toolErr(e: unknown) {
 }
 
 export async function mcpCommand(): Promise<void> {
-  const server = new McpServer({ name: 'cortex', version: '0.1.0' });
+  const server = new McpServer({ name: 'cortex', version: cortexVersion });
 
   server.registerTool(
     'sync',
