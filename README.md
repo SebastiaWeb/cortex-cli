@@ -137,6 +137,30 @@ cortex pull         # download, decrypt, remap paths, restore CLAUDE.md/skills/d
 
 Open the project on Machine B — Claude Code shows the session history, CLAUDE.md, and skills you synced from Machine A.
 
+### Sync flags
+
+```bash
+cortex sync --dry-run     # show what would be added/modified/removed — nothing is uploaded
+cortex sync --redact      # scrub detected secrets (API keys, tokens) before encrypting, instead of just warning
+cortex sync --strict      # refuse to sync at all if a potential secret is found
+```
+
+### Diagnose your setup
+
+```bash
+cortex doctor
+```
+
+Checks your config file (present, valid, correct permissions), whether the storage backend is actually reachable, whether `CORTEX_PASSPHRASE` is set, and whether the tools you configured are still installed — without touching any synced content.
+
+### Rotate your encryption key
+
+```bash
+cortex rekey
+```
+
+Generates a new random salt and re-encrypts everything already synced under a new derived key, in one atomic operation. Use it if you suspect your passphrase or storage backend has been exposed.
+
 ### Update your token
 
 ```bash
@@ -159,6 +183,8 @@ Updates the stored GitHub PAT without re-running `cortex init`.
 | `cortex sync` | Sync this project (sessions, CLAUDE.md, skills, docs) to personal storage |
 | `cortex pull` | Download this project's synced context and restore it here, remapped |
 | `cortex status` | Show what's out of sync for this project (no download) |
+| `cortex rekey` | Rotate this project's encryption salt and re-encrypt everything under a new key |
+| `cortex doctor` | Diagnose your config, storage backend, and passphrase without touching any content |
 | `cortex set-token <token>` | Update GitHub PAT without reconfiguring everything |
 | `cortex convert <file> --to <target>` | Convert a Claude Code skill to Antigravity or Cursor format |
 | `cortex setup-mcp` | Register cortex as a Claude Code MCP server |
@@ -244,10 +270,13 @@ Everything is encrypted **before** leaving your machine.
 |---|---|
 | Encryption | AES-256-GCM (authenticated) |
 | Key derivation | PBKDF2, 600,000 iterations, SHA-256 |
-| Salt | SHA-256(lowercase(your email)) |
+| Salt (`cortex sync`/`pull`) | Random, generated once per project on first sync, stored unencrypted alongside the manifest |
+| Additional authenticated data | Ciphertext is bound to its storage path — a blob moved or swapped to a different path fails to decrypt instead of silently returning bytes that don't belong there |
 | Passphrase | Never stored anywhere — derived fresh each session |
 | GitHub token | Passed via `GIT_ASKPASS` temp script — never embedded in URLs or git config |
 | Team sessions | Encrypted with shared passphrase, salt = team repo URL |
+
+Suspect your passphrase or backend has been exposed? Rotate the key with `cortex rekey` — no need to lose your synced history.
 
 ---
 
