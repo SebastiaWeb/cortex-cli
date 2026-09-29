@@ -16,3 +16,9 @@ path-mappings.json
 
 # dev-only context for Claude Code — kept local, not published in this open-source repo
 /CLAUDE.md
+
+# marketing/promo assets (blog drafts, cover art, /brag output) — never in this public repo
+/docs/blog/
+/docs/brand/
+/docs/fase-*/
+/brag-output/
